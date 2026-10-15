@@ -1,0 +1,192 @@
+{
+  "revision": "v52-corrected-dispatch-Windows-versus-Wine",
+  "probe_sha256": "58cd71b8e1b510ac9abd3a64bede711e27322278ad5de6a3f9210d4b8350f845",
+  "native_archive_sha256": "5568a1ccbfac80b392906ffbac9580467f518da8d97c0557eab7e70e870f1af3",
+  "scope": "four Windows native and four isolated Wine cases; no Shapr3D replay",
+  "originating_hresult_captured": false,
+  "observations": {
+    "corewindow-sta": {
+      "native": {
+        "V52_PROBE_VERSION": "52",
+        "V52_PROBE_NAME": "corewindow",
+        "V52_PROBE_APARTMENT": "sta",
+        "V52_ROINITIALIZE_HR": "0x00000000",
+        "V52_COREWINDOW_HSTRING_HR": "0x00000000",
+        "V52_COREWINDOW_FACTORY_HR": "0x00000000",
+        "V52_COREWINDOW_GET_CURRENT_HR": "0x00000000",
+        "V52_COREWINDOW_GET_CURRENT_NULL": "1",
+        "V52_COREWINDOW_PROBE_DONE": "1",
+        "V52_PROBE_EXIT": "0"
+      },
+      "wine": {
+        "V52_PROBE_VERSION": "52",
+        "V52_PROBE_NAME": "corewindow",
+        "V52_PROBE_APARTMENT": "sta",
+        "V52_ROINITIALIZE_HR": "0x00000000",
+        "V52_COREWINDOW_HSTRING_HR": "0x00000000",
+        "V52_COREWINDOW_FACTORY_HR": "0x00000000",
+        "V52_COREWINDOW_GET_CURRENT_HR": "0x00000000",
+        "V52_COREWINDOW_GET_CURRENT_NULL": "1",
+        "V52_COREWINDOW_PROBE_DONE": "1",
+        "V52_PROBE_EXIT": "0"
+      },
+      "differences": [],
+      "native_sha256": "129b1ac60c2e36c9e814751099741937b634052f84b4284e0c07a446c0ca0efa",
+      "wine_sha256": "129b1ac60c2e36c9e814751099741937b634052f84b4284e0c07a446c0ca0efa"
+    },
+    "corewindow-mta": {
+      "native": {
+        "V52_PROBE_VERSION": "52",
+        "V52_PROBE_NAME": "corewindow",
+        "V52_PROBE_APARTMENT": "mta",
+        "V52_ROINITIALIZE_HR": "0x00000000",
+        "V52_COREWINDOW_HSTRING_HR": "0x00000000",
+        "V52_COREWINDOW_FACTORY_HR": "0x00000000",
+        "V52_COREWINDOW_GET_CURRENT_HR": "0x00000000",
+        "V52_COREWINDOW_GET_CURRENT_NULL": "1",
+        "V52_COREWINDOW_PROBE_DONE": "1",
+        "V52_PROBE_EXIT": "0"
+      },
+      "wine": {
+        "V52_PROBE_VERSION": "52",
+        "V52_PROBE_NAME": "corewindow",
+        "V52_PROBE_APARTMENT": "mta",
+        "V52_ROINITIALIZE_HR": "0x00000000",
+        "V52_COREWINDOW_HSTRING_HR": "0x00000000",
+        "V52_COREWINDOW_FACTORY_HR": "0x00000000",
+        "V52_COREWINDOW_GET_CURRENT_HR": "0x00000000",
+        "V52_COREWINDOW_GET_CURRENT_NULL": "1",
+        "V52_COREWINDOW_PROBE_DONE": "1",
+        "V52_PROBE_EXIT": "0"
+      },
+      "differences": [],
+      "native_sha256": "bd50233d03a0febe0e0e42dcc46d00830f51e46020908c229a099f0a2954c801",
+      "wine_sha256": "bd50233d03a0febe0e0e42dcc46d00830f51e46020908c229a099f0a2954c801"
+    },
+    "accessibility-sta": {
+      "native": {
+        "V52_PROBE_VERSION": "52",
+        "V52_PROBE_NAME": "accessibility",
+        "V52_PROBE_APARTMENT": "sta",
+        "V52_ROINITIALIZE_HR": "0x00000000",
+        "V52_ACCESSIBILITY_HSTRING_HR": "0x00000000",
+        "V52_ACCESSIBILITY_ACTIVATE_HR": "0x00000000",
+        "V52_ACCESSIBILITY_QI_HR": "0x00000000",
+        "V52_ACCESSIBILITY_GET_HIGHCONTRAST_HR": "0x00000000",
+        "V52_ACCESSIBILITY_GET_HIGHCONTRAST_VALUE": "0",
+        "V52_ACCESSIBILITY_ADD_NULL_HANDLER_HR": "0x80070490",
+        "V52_ACCESSIBILITY_ADD_NULL_HANDLER_TOKEN": "0x1122334455667788",
+        "V52_ACCESSIBILITY_ADD1_HR": "0x80070490",
+        "V52_ACCESSIBILITY_ADD1_TOKEN": "0x1122334455667788",
+        "V52_HANDLER_REFS_AFTER_ADD1": "1",
+        "V52_HANDLER_REFS_FINAL": "1",
+        "V52_HANDLER_ADDS": "0",
+        "V52_HANDLER_RELEASES": "0",
+        "V52_HANDLER_INVOKED": "0",
+        "V52_ACCESSIBILITY_PROBE_DONE": "1",
+        "V52_PROBE_EXIT": "0"
+      },
+      "wine": {
+        "V52_PROBE_VERSION": "52",
+        "V52_PROBE_NAME": "accessibility",
+        "V52_PROBE_APARTMENT": "sta",
+        "V52_ROINITIALIZE_HR": "0x00000000",
+        "V52_ACCESSIBILITY_HSTRING_HR": "0x00000000",
+        "V52_ACCESSIBILITY_ACTIVATE_HR": "0x00000000",
+        "V52_ACCESSIBILITY_QI_HR": "0x00000000",
+        "V52_ACCESSIBILITY_GET_HIGHCONTRAST_HR": "0x00000000",
+        "V52_ACCESSIBILITY_GET_HIGHCONTRAST_VALUE": "0",
+        "V52_ACCESSIBILITY_ADD_NULL_HANDLER_HR": "0x80004001",
+        "V52_ACCESSIBILITY_ADD_NULL_HANDLER_TOKEN": "0x1122334455667788",
+        "V52_ACCESSIBILITY_ADD1_HR": "0x80004001",
+        "V52_ACCESSIBILITY_ADD1_TOKEN": "0x1122334455667788",
+        "V52_HANDLER_REFS_AFTER_ADD1": "1",
+        "V52_HANDLER_REFS_FINAL": "1",
+        "V52_HANDLER_ADDS": "0",
+        "V52_HANDLER_RELEASES": "0",
+        "V52_HANDLER_INVOKED": "0",
+        "V52_ACCESSIBILITY_PROBE_DONE": "1",
+        "V52_PROBE_EXIT": "0"
+      },
+      "differences": [
+        {
+          "field": "V52_ACCESSIBILITY_ADD1_HR",
+          "windows": "0x80070490",
+          "wine": "0x80004001"
+        },
+        {
+          "field": "V52_ACCESSIBILITY_ADD_NULL_HANDLER_HR",
+          "windows": "0x80070490",
+          "wine": "0x80004001"
+        }
+      ],
+      "native_sha256": "9b82fed1788d73dd37605b54de8b695e60f79078a27058562413e16c59770ec0",
+      "wine_sha256": "fc194d2c715092147326268a4dd923ee7f5a26c749bdf112c10bcc61e6cd481e"
+    },
+    "accessibility-mta": {
+      "native": {
+        "V52_PROBE_VERSION": "52",
+        "V52_PROBE_NAME": "accessibility",
+        "V52_PROBE_APARTMENT": "mta",
+        "V52_ROINITIALIZE_HR": "0x00000000",
+        "V52_ACCESSIBILITY_HSTRING_HR": "0x00000000",
+        "V52_ACCESSIBILITY_ACTIVATE_HR": "0x00000000",
+        "V52_ACCESSIBILITY_QI_HR": "0x00000000",
+        "V52_ACCESSIBILITY_GET_HIGHCONTRAST_HR": "0x00000000",
+        "V52_ACCESSIBILITY_GET_HIGHCONTRAST_VALUE": "0",
+        "V52_ACCESSIBILITY_ADD_NULL_HANDLER_HR": "0x80070490",
+        "V52_ACCESSIBILITY_ADD_NULL_HANDLER_TOKEN": "0x1122334455667788",
+        "V52_ACCESSIBILITY_ADD1_HR": "0x80070490",
+        "V52_ACCESSIBILITY_ADD1_TOKEN": "0x1122334455667788",
+        "V52_HANDLER_REFS_AFTER_ADD1": "1",
+        "V52_HANDLER_REFS_FINAL": "1",
+        "V52_HANDLER_ADDS": "0",
+        "V52_HANDLER_RELEASES": "0",
+        "V52_HANDLER_INVOKED": "0",
+        "V52_ACCESSIBILITY_PROBE_DONE": "1",
+        "V52_PROBE_EXIT": "0"
+      },
+      "wine": {
+        "V52_PROBE_VERSION": "52",
+        "V52_PROBE_NAME": "accessibility",
+        "V52_PROBE_APARTMENT": "mta",
+        "V52_ROINITIALIZE_HR": "0x00000000",
+        "V52_ACCESSIBILITY_HSTRING_HR": "0x00000000",
+        "V52_ACCESSIBILITY_ACTIVATE_HR": "0x00000000",
+        "V52_ACCESSIBILITY_QI_HR": "0x00000000",
+        "V52_ACCESSIBILITY_GET_HIGHCONTRAST_HR": "0x00000000",
+        "V52_ACCESSIBILITY_GET_HIGHCONTRAST_VALUE": "0",
+        "V52_ACCESSIBILITY_ADD_NULL_HANDLER_HR": "0x80004001",
+        "V52_ACCESSIBILITY_ADD_NULL_HANDLER_TOKEN": "0x1122334455667788",
+        "V52_ACCESSIBILITY_ADD1_HR": "0x80004001",
+        "V52_ACCESSIBILITY_ADD1_TOKEN": "0x1122334455667788",
+        "V52_HANDLER_REFS_AFTER_ADD1": "1",
+        "V52_HANDLER_REFS_FINAL": "1",
+        "V52_HANDLER_ADDS": "0",
+        "V52_HANDLER_RELEASES": "0",
+        "V52_HANDLER_INVOKED": "0",
+        "V52_ACCESSIBILITY_PROBE_DONE": "1",
+        "V52_PROBE_EXIT": "0"
+      },
+      "differences": [
+        {
+          "field": "V52_ACCESSIBILITY_ADD1_HR",
+          "windows": "0x80070490",
+          "wine": "0x80004001"
+        },
+        {
+          "field": "V52_ACCESSIBILITY_ADD_NULL_HANDLER_HR",
+          "windows": "0x80070490",
+          "wine": "0x80004001"
+        }
+      ],
+      "native_sha256": "30037486fbf8bbabaa2ebaa844e9856bebeb1609e50d8e32e63988e5f04c9477",
+      "wine_sha256": "973f6ab44085af68a5938f8b89bf15039a9addcb3a48bb37dd1b1346adcf3a55"
+    }
+  },
+  "limits": [
+    "CoreWindow test only observes threads without a CoreWindow",
+    "Native AccessibilitySettings.add returns ERROR_NOT_FOUND on this Windows build; this is not a successful event subscription",
+    "Remove/actual event callback not exercised because native add did not succeed"
+  ]
+}

@@ -1,0 +1,43 @@
+name: WinRT v52 contract probes (cross-compile and evidence)
+
+on:
+  push:
+    branches:
+      - experiment/winrt-v52-contract-probes
+    paths:
+      - "probes/v52/**"
+      - ".github/workflows/winrt-v52-contracts.yml"
+  pull_request:
+    branches:
+      - experiment/winrt-v47-v51
+    paths:
+      - "probes/v52/**"
+      - ".github/workflows/winrt-v52-contracts.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-probes:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            probes/v52
+      - name: Check captured evidence and dispatcher
+        run: python3 -m unittest discover -s probes/v52/tests -v
+      - name: Install cross-compiler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends gcc-mingw-w64-x86-64
+      - name: Compile standalone WinRT probe
+        run: |
+          x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wextra -Werror \
+            -Wno-cast-function-type -Wl,--no-insert-timestamp \
+            -o /tmp/v52_contract_probe.exe probes/v52/v52_contract_probe.c
+          file /tmp/v52_contract_probe.exe | grep -q 'PE32+'
+          sha256sum /tmp/v52_contract_probe.exe
