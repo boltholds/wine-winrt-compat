@@ -1,0 +1,72 @@
+name: Wine WinRT PE64 experimental modules
+
+on:
+  push:
+    branches:
+      - experiment/winrt-v47-v51
+    paths:
+      - "dlls/twinapi.appcore/**"
+      - "dlls/shcore/**"
+      - "dlls/wintypes/**"
+      - "dlls/kernelbase/**"
+      - "dlls/dxgi/**"
+      - "include/winbase.h"
+      - "tools/winrt/**"
+      - "docs/winrt/**"
+      - ".github/workflows/winrt-pe64-build.yml"
+  pull_request:
+    branches:
+      - baseline/wine-11.19-a312fc87
+    paths:
+      - "dlls/**"
+      - "include/winbase.h"
+      - "tools/winrt/**"
+      - "docs/winrt/**"
+      - ".github/workflows/winrt-pe64-build.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  pe64-modules:
+    name: Compile Wine 11.19 WinRT PE64 modules (no app runtime)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Check source identity
+        run: |
+          python3 tools/winrt/verify_port_source.py
+          python3 -m unittest discover -s tools/winrt/tests -v
+      - name: Install x86_64 PE toolchain
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            flex bison gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+      - name: Configure out-of-tree Wine PE64
+        run: |
+          mkdir -p build-pe64
+          cd build-pe64
+          ../configure --enable-win64 --with-mingw --disable-tests
+      - name: Build five affected PE64 DLLs
+        run: |
+          make -C build-pe64 -j4 \
+            dlls/twinapi.appcore/x86_64-windows/twinapi.appcore.dll \
+            dlls/wintypes/x86_64-windows/wintypes.dll \
+            dlls/shcore/x86_64-windows/shcore.dll \
+            dlls/kernelbase/x86_64-windows/kernelbase.dll \
+            dlls/dxgi/x86_64-windows/dxgi.dll
+      - name: Verify artifacts are PE and record hashes
+        run: |
+          for dll in \
+            dlls/twinapi.appcore/x86_64-windows/twinapi.appcore.dll \
+            dlls/wintypes/x86_64-windows/wintypes.dll \
+            dlls/shcore/x86_64-windows/shcore.dll \
+            dlls/kernelbase/x86_64-windows/kernelbase.dll \
+            dlls/dxgi/x86_64-windows/dxgi.dll; do
+              file "build-pe64/$dll" | grep -q 'PE32+'
+              sha256sum "build-pe64/$dll"
+          done
