@@ -125,11 +125,31 @@ HRESULT dxgi_factory_create(REFIID riid, void **factory, BOOL extended);
 HWND dxgi_factory_get_device_window(struct dxgi_factory *factory);
 struct dxgi_factory *unsafe_impl_from_IDXGIFactory(IDXGIFactory *iface);
 
+/* Experimental private XAML device interface: no SDK definition is assumed.
+ * Slots 3 and 4 follow the IUnknown methods. */
+struct dxgi_xaml_device_interface;
+
+struct dxgi_xaml_device_vtbl
+{
+    HRESULT (STDMETHODCALLTYPE *QueryInterface)(struct dxgi_xaml_device_interface *, REFIID, void **);
+    ULONG (STDMETHODCALLTYPE *AddRef)(struct dxgi_xaml_device_interface *);
+    ULONG (STDMETHODCALLTYPE *Release)(struct dxgi_xaml_device_interface *);
+    HRESULT (STDMETHODCALLTYPE *SetInProcessGPUPriority)(struct dxgi_xaml_device_interface *, INT);
+    HRESULT (STDMETHODCALLTYPE *GetInProcessGPUPriority)(struct dxgi_xaml_device_interface *, INT *);
+};
+
+struct dxgi_xaml_device_interface
+{
+    const struct dxgi_xaml_device_vtbl *lpVtbl;
+};
+
 /* IDXGIDevice */
 struct dxgi_device
 {
     IWineDXGIDevice IWineDXGIDevice_iface;
     IWineDXGISwapChainFactory IWineDXGISwapChainFactory_iface;
+    struct dxgi_xaml_device_interface xaml_device_iface;
+    LONG xaml_priority;
     IUnknown *child_layer;
     LONG refcount;
     struct wined3d_private_store private_store;
