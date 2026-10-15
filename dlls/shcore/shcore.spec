@@ -170,12 +170,12 @@
 232 stub -noname SHRemoveWindowSubclass
 233 stub -noname SHDefSubclassProc
 234 stub -noname SHRegisterClassW
-240 stub -noname RegisterScaleChangeSinkForWindow
+240 stdcall -noname RegisterScaleChangeSinkForWindow(ptr ptr ptr)
 241 stub -noname ScaleAndMapRelativeRect
 242 stub -noname RelativeRectFromPhysicalRectWithScale
 244 stub -noname GetScaleFactorForWindow
 245 stub -noname RegisterScaleChangeNotificationsForWindow
-246 stub -noname RevokeScaleChangeNotificationsForWindow
+246 stdcall -noname RevokeScaleChangeNotificationsForWindow(ptr long)
 247 stub -noname GetOverrideScaleFactorForWindow
 248 stub -noname GetSystemScaleFactorForWindow
 249 stub -noname UpdateScalingInfoCache

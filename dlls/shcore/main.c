@@ -18,6 +18,8 @@
  */
 
 #include <stdarg.h>
+#include <stdlib.h>
+#include <string.h>
 
 #define COBJMACROS
 
@@ -28,6 +30,7 @@
 #include "winternl.h"
 #include "initguid.h"
 #include "ocidl.h"
+#include "objbase.h"
 #include "featurestagingapi.h"
 #include "shellscalingapi.h"
 #include "shcore.h"
@@ -2622,6 +2625,133 @@ FEATURE_ENABLED_STATE WINAPI GetFeatureEnabledState(UINT32 feature, FEATURE_CHAN
 {
     FIXME("(%u, %u) stub\n", feature, change_time);
     return FEATURE_ENABLED_STATE_DEFAULT;
+}
+
+/* Shapr3D / Wine v51: private SHCore ordinal 240/246.
+ *
+ * Native Windows 11 observation (SHA-pinned shcore.dll):
+ *   RegisterScaleChangeSinkForWindow(HWND, IScaleChangeSink *, DWORD *)
+ *   RevokeScaleChangeNotificationsForWindow(HWND, DWORD)
+ * The sink interface GUID was read from native HKCR\Interface.
+ * Only registration identity, HRESULTs, cookies and COM lifetimes are
+ * implemented here. The native callback method has ABI [IUnknown + slot 3]
+ * and one UINT argument; real DPI dispatch is not integrated yet.
+ * Therefore this remains an explicit opt-in compatibility experiment.
+ */
+struct scale_sink_v51_subscription
+{
+    struct scale_sink_v51_subscription *next;
+    HWND hwnd;
+    IUnknown *sink;
+    DWORD cookie;
+};
+
+static const GUID IID_IScaleChangeSink_v51 =
+    {0xabadfe7f,0x04c1,0x4a9f,{0x9b,0x3c,0xa3,0x23,0xf1,0xc8,0x01,0x78}};
+static INIT_ONCE scale_sink_v51_init = INIT_ONCE_STATIC_INIT;
+static CRITICAL_SECTION scale_sink_v51_cs;
+static struct scale_sink_v51_subscription *scale_sink_v51_entries;
+static LONG scale_sink_v51_cookie;
+
+static BOOL scale_sink_v51_enabled(void)
+{
+    char value[4];
+    return GetEnvironmentVariableA("WINE_SHCORE_SCALE_SINK_V51",value,sizeof(value))==1 && value[0]=='1';
+}
+
+static BOOL CALLBACK scale_sink_v51_init_lock(INIT_ONCE *once,void *parameter,void **context)
+{
+    InitializeCriticalSection(&scale_sink_v51_cs);
+    return TRUE;
+}
+
+/***********************************************************************
+ * RegisterScaleChangeSinkForWindow  [SHCORE.240, private ordinal]
+ */
+HRESULT WINAPI RegisterScaleChangeSinkForWindow(HWND hwnd,IUnknown *sink,DWORD *cookie)
+{
+    struct scale_sink_v51_subscription *entry;
+    IUnknown *verified=NULL;
+    ULONG_PTR apartment;
+    LONG next_cookie;
+    HRESULT hr;
+
+    FIXME("SHCORE51_REGISTER hwnd=%p sink=%p cookie=%p; DPI callback dispatch pending.\n",
+          hwnd,sink,cookie);
+    if (!scale_sink_v51_enabled()) return E_NOTIMPL;
+    if (!cookie) return E_POINTER;
+    *cookie=0;
+    if (hwnd && !IsWindow(hwnd)) return E_INVALIDARG;
+    /* Windows accepts NULL HWND when the COM apartment is initialized. */
+    if (!hwnd && FAILED(hr=CoGetContextToken(&apartment))) return hr;
+    if (!sink) return E_POINTER;
+
+    hr=IUnknown_QueryInterface(sink,&IID_IScaleChangeSink_v51,(void **)&verified);
+    if (FAILED(hr)) return hr;
+    if (!verified) return E_FAIL;
+    entry=malloc(sizeof(*entry));
+    if (!entry)
+    {
+        IUnknown_Release(verified);
+        return E_OUTOFMEMORY;
+    }
+    if (!InitOnceExecuteOnce(&scale_sink_v51_init,scale_sink_v51_init_lock,NULL,NULL))
+    {
+        hr=HRESULT_FROM_WIN32(GetLastError());
+        IUnknown_Release(verified);
+        free(entry);
+        return FAILED(hr)?hr:E_FAIL;
+    }
+
+    /* Interlocked token allocation and linked-list mutation under one lock.
+     * There is exactly one owning COM reference for each subscription.
+     * Marshal-to-apartment parity still requires separate investigation. */
+    EnterCriticalSection(&scale_sink_v51_cs);
+    next_cookie=InterlockedIncrement(&scale_sink_v51_cookie);
+    if (!next_cookie) next_cookie=InterlockedIncrement(&scale_sink_v51_cookie);
+    entry->hwnd=hwnd;
+    entry->sink=verified;
+    entry->cookie=(DWORD)next_cookie;
+    entry->next=scale_sink_v51_entries;
+    scale_sink_v51_entries=entry;
+    *cookie=entry->cookie;
+    LeaveCriticalSection(&scale_sink_v51_cs);
+
+    TRACE("SHCORE51_REGISTERED hwnd=%p cookie=%lu sink=%p\n",hwnd,*cookie,verified);
+    return S_OK;
+}
+
+/***********************************************************************
+ * RevokeScaleChangeNotificationsForWindow [SHCORE.246, private ordinal]
+ */
+HRESULT WINAPI RevokeScaleChangeNotificationsForWindow(HWND hwnd,DWORD cookie)
+{
+    struct scale_sink_v51_subscription *entry=NULL,**cursor;
+    if (!scale_sink_v51_enabled()) return E_NOTIMPL;
+    if (hwnd && !IsWindow(hwnd)) return E_INVALIDARG;
+    if (!InitOnceExecuteOnce(&scale_sink_v51_init,scale_sink_v51_init_lock,NULL,NULL))
+        return HRESULT_FROM_WIN32(GetLastError());
+
+    EnterCriticalSection(&scale_sink_v51_cs);
+    for(cursor=&scale_sink_v51_entries;*cursor;cursor=&(*cursor)->next)
+    {
+        if ((*cursor)->hwnd==hwnd && (*cursor)->cookie==cookie)
+        {
+            entry=*cursor;
+            *cursor=entry->next;
+            break;
+        }
+    }
+    LeaveCriticalSection(&scale_sink_v51_cs);
+    if (entry)
+    {
+        TRACE("SHCORE51_REVOKED hwnd=%p cookie=%lu sink=%p\n",hwnd,cookie,entry->sink);
+        IUnknown_Release(entry->sink);
+        free(entry);
+    }
+    else TRACE("SHCORE51_REVOKE_NOOP hwnd=%p cookie=%lu\n",hwnd,cookie);
+    /* Native Windows returns S_OK for an unknown cookie on a valid window. */
+    return S_OK;
 }
 
 /*************************************************************************
