@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "project": "wine-winrt-compat",
+  "upstream": {
+    "repository": "wine-mirror/wine",
+    "default_branch": "master",
+    "validated_lab_commit": "a312fc87a501a447576effe8b02444558f9bbf30",
+    "baseline_branch": "baseline/wine-11.19-a312fc87",
+    "reference_version": "11.19"
+  },
+  "repository_policy": {
+    "stable_branch": "master",
+    "experiment_branch_prefix": "experiment/",
+    "no_proprietary_binaries": true,
+    "merge_requires_native_parity": true
+  },
+  "milestones": [
+    {
+      "id": "v47",
+      "area": "CoreApplication COM/WinRT",
+      "state": "verified_in_isolated_lab",
+      "evidence": "17/17 regression checks; baseline restored after v51",
+      "upstreamed": false
+    },
+    {
+      "id": "v50",
+      "area": "ICoreApplicationPrivate and PropertySet",
+      "state": "verified_in_isolated_lab",
+      "evidence": "STA/MTA COM behavior and PropertySet identity tests; limited to experimental Wine flag",
+      "upstreamed": false
+    },
+    {
+      "id": "v51",
+      "area": "SHCore private scale sink ordinals 240/246",
+      "state": "verified_in_isolated_lab",
+      "evidence": "nine Wine smoke scenarios; native registration and balanced COM ownership; application passed ordinal 240",
+      "upstreamed": false
+    },
+    {
+      "id": "v52",
+      "area": "CoreWindow / HighContrastChanged / originating HRESULT",
+      "state": "research_only",
+      "evidence": "isolated-lab implementation not validated; original HRESULT remains unknown",
+      "upstreamed": false
+    }
+  ],
+  "limitations": [
+    "No complete CoreWindow/dispatcher or IFrameworkView lifecycle",
+    "No confirmed native-equivalent DPI callback delivery",
+    "No confirmed originating HRESULT at Shapr3D.dll + 0x1A3ED89",
+    "No working interactive Shapr3D UI has been demonstrated"
+  ]
+}

@@ -1,0 +1,36 @@
+name: winrt-metadata
+
+on:
+  pull_request:
+    paths:
+      - "docs/winrt/**"
+      - "tools/winrt/**"
+      - ".github/workflows/winrt-metadata.yml"
+  push:
+    branches:
+      - "master"
+      - "feature/winrt-compat-bootstrap"
+    paths:
+      - "docs/winrt/**"
+      - "tools/winrt/**"
+      - ".github/workflows/winrt-metadata.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate WinRT research ledger
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          sparse-checkout: |
+            docs/winrt
+            tools/winrt
+      - name: Validate metadata
+        run: python3 tools/winrt/check_metadata.py
+      - name: Run negative-control tests
+        run: python3 -m unittest discover -s tools/winrt/tests -v
