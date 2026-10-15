@@ -88,6 +88,74 @@ HRESULT WINAPI GetScaleFactorForMonitor(HMONITOR monitor, DEVICE_SCALE_FACTOR *s
     return S_OK;
 }
 
+/* Diagnostic compatibility for private SHCore export #265, Wine 11.19.
+ *
+ * The native API queries ICoreWindowInterop for the CoreWindow HWND and
+ * computes percentage scale.  The complete Microsoft per-window override
+ * algorithm is not reproduced here. This opt-in path uses Win32 DPI as an
+ * approximation, and preserves COM errors rather than fabricating access.
+ */
+struct shcore_corewindow_interop;
+struct shcore_corewindow_interop_vtbl
+{
+    HRESULT (WINAPI *QueryInterface)(struct shcore_corewindow_interop *, REFIID, void **);
+    ULONG (WINAPI *AddRef)(struct shcore_corewindow_interop *);
+    ULONG (WINAPI *Release)(struct shcore_corewindow_interop *);
+    HRESULT (WINAPI *get_WindowHandle)(struct shcore_corewindow_interop *, HWND *);
+    HRESULT (WINAPI *put_MessageHandled)(struct shcore_corewindow_interop *, BYTE);
+};
+
+struct shcore_corewindow_interop
+{
+    const struct shcore_corewindow_interop_vtbl *lpVtbl;
+};
+
+static const GUID shcore_iid_corewindow_interop =
+    {0x45d64a29, 0xa63e, 0x4cb6, {0xb4, 0x98, 0x57, 0x81, 0xd2, 0x98, 0xcb, 0x4f}};
+
+HRESULT WINAPI shcore_GetCoreWindowScalePercent(IUnknown *core_window, UINT *scale)
+{
+    struct shcore_corewindow_interop *interop = NULL;
+    char profile[3];
+    HRESULT hr;
+    UINT dpi;
+    HWND hwnd = NULL;
+
+    if (!scale) return E_POINTER;
+    *scale = 100;  /* The native ordinal initialises the output before COM. */
+
+    if (GetEnvironmentVariableA("WINE_SHCORE_265_EXPERIMENT", profile, sizeof(profile)) != 1 || profile[0] != '1')
+        return E_NOTIMPL;
+
+    if (core_window)
+    {
+        hr = IUnknown_QueryInterface(core_window, &shcore_iid_corewindow_interop, (void **)&interop);
+        if (FAILED(hr))
+        {
+            TRACE("SHCORE.265 ICoreWindowInterop query failed %#lx.\n", hr);
+            return hr;
+        }
+
+        hr = interop->lpVtbl->get_WindowHandle(interop, &hwnd);
+        interop->lpVtbl->Release(interop);
+        if (FAILED(hr))
+        {
+            TRACE("SHCORE.265 get_WindowHandle failed %#lx.\n", hr);
+            return hr;
+        }
+        if (!hwnd || !IsWindow(hwnd)) return HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE);
+        dpi = GetDpiForWindow(hwnd);
+    }
+    else
+        dpi = GetDpiForSystem();
+
+    if (!dpi) return HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE);
+    if (dpi > 960) return E_INVALIDARG; /* Guard arithmetic / unsupported DPI. */
+    *scale = (dpi * 100) / 96;
+    TRACE("SHCORE.265 opt-in approximate DPI scale hwnd %p, dpi %u, scale %u.\n", hwnd, dpi, *scale);
+    return S_OK;
+}
+
 DEVICE_SCALE_FACTOR WINAPI GetScaleFactorForDevice(DISPLAY_DEVICE_TYPE device_type)
 {
     FIXME("%d\n", device_type);

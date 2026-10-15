@@ -187,6 +187,7 @@
 255 stub -noname GetCurrentWindow
 260 stub -noname PhysicalRectFromRelativeRectWithScales
 261 stub -noname RelativeRectFromPhysicalRectWithScales
+265 stdcall -noname shcore_GetCoreWindowScalePercent(ptr ptr)
 270 stub -noname SHCreateMemoryStreamOnSharedBuffer
 280 stub -noname _CreateDirectoryHelper
 281 stub -noname Win32CreateDirectory
