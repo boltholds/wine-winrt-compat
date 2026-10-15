@@ -18,19 +18,99 @@
  */
 
 #include "private.h"
+#include "roapi.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(twinapi);
+
+/* Experimental ABI derived from Windows 10/11 twinapi.appcore: 
+ * 0..5 IInspectable, slot 6 deliberately unknown, slot 7 yields IPropertySet.
+ * Do not infer a name or signature for slot 6 until native evidence exists. */
+typedef struct ICoreApplicationPrivate_v50 ICoreApplicationPrivate_v50;
+typedef struct ICoreApplicationPrivate_v50Vtbl
+{
+    HRESULT (WINAPI *QueryInterface)(ICoreApplicationPrivate_v50 *, REFIID, void **);
+    ULONG (WINAPI *AddRef)(ICoreApplicationPrivate_v50 *);
+    ULONG (WINAPI *Release)(ICoreApplicationPrivate_v50 *);
+    HRESULT (WINAPI *GetIids)(ICoreApplicationPrivate_v50 *, ULONG *, IID **);
+    HRESULT (WINAPI *GetRuntimeClassName)(ICoreApplicationPrivate_v50 *, HSTRING *);
+    HRESULT (WINAPI *GetTrustLevel)(ICoreApplicationPrivate_v50 *, TrustLevel *);
+    HRESULT (WINAPI *UnknownSlot6)(ICoreApplicationPrivate_v50 *);
+    HRESULT (WINAPI *get_PrivateProperties)(ICoreApplicationPrivate_v50 *, IPropertySet **);
+} ICoreApplicationPrivate_v50Vtbl;
+
+struct ICoreApplicationPrivate_v50
+{
+    const ICoreApplicationPrivate_v50Vtbl *lpVtbl;
+};
+
+static const GUID IID_ICoreApplicationPrivate_v50 =
+    {0x17b0e613,0x942a,0x422d,{0x90,0x4c,0xf9,0x0d,0xc7,0x1a,0x7d,0xae}};
+
+static BOOL v50_private_enabled(void)
+{
+    char value[4];
+    return GetEnvironmentVariableA("WINE_COREAPP_PRIVATE_V50",value,sizeof(value))==1 && value[0]=='1';
+}
+
 
 struct factory
 {
     IActivationFactory IActivationFactory_iface;
     ICoreApplication ICoreApplication_iface;
+    ICoreApplicationPrivate_v50 ICoreApplicationPrivate_v50_iface;
+    IPropertySet *private_properties;
+    IPropertySet *public_properties;
     LONG ref;
 };
 
 static inline struct factory *impl_from_IActivationFactory( IActivationFactory *iface )
 {
     return CONTAINING_RECORD( iface, struct factory, IActivationFactory_iface );
+}
+
+/* The native private slot-7 PropertySet is stable across calls. A public
+ * ICoreApplication.Properties call returns a second, independently stable
+ * PropertySet (measured under STA and MTA). Keep one owning reference per
+ * cache for the entire static factory lifetime. */
+static HRESULT create_v50_property_set(IPropertySet **result)
+{
+    const WCHAR *class_name = RuntimeClass_Windows_Foundation_Collections_PropertySet;
+    HSTRING classid = NULL;
+    IInspectable *instance = NULL;
+    HRESULT hr;
+
+    *result = NULL;
+    if (FAILED(hr = WindowsCreateString(class_name,wcslen(class_name),&classid)))
+        return hr;
+    hr = RoActivateInstance(classid,&instance);
+    WindowsDeleteString(classid);
+    if (FAILED(hr)) return hr;
+    if (!instance) return E_FAIL;
+    hr = IInspectable_QueryInterface(instance,&IID_IPropertySet,(void **)result);
+    IInspectable_Release(instance);
+    return hr;
+}
+
+static HRESULT coreapp_v50_cached_properties(IPropertySet **cache,IPropertySet **result)
+{
+    IPropertySet *created = NULL, *cached;
+    HRESULT hr;
+    if (!result) return E_POINTER;
+    *result = NULL;
+
+    /* This static factory never releases its cache reference, so a pointer
+     * published with InterlockedCompareExchangePointer is safe to AddRef. */
+    cached = InterlockedCompareExchangePointer((void **)cache,NULL,NULL);
+    if (!cached)
+    {
+        if (FAILED(hr = create_v50_property_set(&created))) return hr;
+        cached = InterlockedCompareExchangePointer((void **)cache,created,NULL);
+        if (cached) IPropertySet_Release(created);
+        else cached = created;
+    }
+    IPropertySet_AddRef(cached);
+    *result = cached;
+    return S_OK;
 }
 
 static HRESULT WINAPI activation_factory_QueryInterface( IActivationFactory *iface, REFIID iid, void **out )
@@ -61,6 +141,16 @@ static HRESULT WINAPI activation_factory_QueryInterface( IActivationFactory *ifa
             TRACE( "WINE_COREAPP_EXPERIMENT: ICoreApplication statics supplied.\n" );
             return S_OK;
         }
+    }
+
+    /* v47 tests intentionally keep this disabled unless explicitly opted in.
+     * The private IID is real on Windows; slot 7 is now validated. */
+    if (IsEqualGUID(iid,&IID_ICoreApplicationPrivate_v50) && v50_private_enabled())
+    {
+        IActivationFactory_AddRef(&impl->IActivationFactory_iface);
+        *out = &impl->ICoreApplicationPrivate_v50_iface;
+        TRACE("COREAPP50_PRIVATE_QI_OK iface=%p out=%p\n",*out,out);
+        return S_OK;
     }
 
     FIXME( "%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid( iid ) );
@@ -205,10 +295,10 @@ static HRESULT WINAPI coreapp_remove_Resuming(ICoreApplication *iface, EventRegi
 
 static HRESULT WINAPI coreapp_get_Properties(ICoreApplication *iface, IPropertySet **value)
 {
-    FIXME("iface %p, value %p: not implemented.\n", iface, value);
-    if (!value) return E_INVALIDARG;
-    *value = NULL;
-    return E_NOTIMPL;
+    struct factory *impl = impl_from_ICoreApplication(iface);
+    HRESULT hr = coreapp_v50_cached_properties(&impl->public_properties,value);
+    TRACE("COREAPP50_PUBLIC_PROPERTIES hr=%#lx value=%p\n",hr,value ? *value : NULL);
+    return hr;
 }
 
 static HRESULT WINAPI coreapp_GetCurrentView(ICoreApplication *iface, ICoreApplicationView **value)
@@ -291,10 +381,74 @@ static const struct ICoreApplicationVtbl coreapp_vtbl =
     coreapp_RunWithActivationFactories,
 };
 
+static inline struct factory *impl_from_v50_private(ICoreApplicationPrivate_v50 *iface)
+{
+    return CONTAINING_RECORD(iface,struct factory,ICoreApplicationPrivate_v50_iface);
+}
+static HRESULT WINAPI private_v50_QueryInterface(ICoreApplicationPrivate_v50 *iface,REFIID iid,void **out)
+{
+    struct factory *impl=impl_from_v50_private(iface);
+    return activation_factory_QueryInterface(&impl->IActivationFactory_iface,iid,out);
+}
+static ULONG WINAPI private_v50_AddRef(ICoreApplicationPrivate_v50 *iface)
+{
+    struct factory *impl=impl_from_v50_private(iface);
+    return activation_factory_AddRef(&impl->IActivationFactory_iface);
+}
+static ULONG WINAPI private_v50_Release(ICoreApplicationPrivate_v50 *iface)
+{
+    struct factory *impl=impl_from_v50_private(iface);
+    return activation_factory_Release(&impl->IActivationFactory_iface);
+}
+/* Metadata for this undocumented interface has not yet been established.
+ * Return E_NOTIMPL rather than inventing a runtime class or IID list. */
+static HRESULT WINAPI private_v50_GetIids(ICoreApplicationPrivate_v50 *iface,ULONG *count,IID **iids)
+{
+    if (count) *count=0;
+    if (iids) *iids=NULL;
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI private_v50_GetRuntimeClassName(ICoreApplicationPrivate_v50 *iface,HSTRING *name)
+{
+    if (name) *name=NULL;
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI private_v50_GetTrustLevel(ICoreApplicationPrivate_v50 *iface,TrustLevel *level)
+{
+    return E_NOTIMPL;
+}
+/* Slot 6 remains unknown; no pointers are touched, no false success. */
+static HRESULT WINAPI private_v50_UnknownSlot6(ICoreApplicationPrivate_v50 *iface)
+{
+    FIXME("COREAPP50_PRIVATE_SLOT6_UNKNOWN returning E_NOTIMPL\n");
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI private_v50_get_PrivateProperties(ICoreApplicationPrivate_v50 *iface,IPropertySet **value)
+{
+    struct factory *impl = impl_from_v50_private(iface);
+    HRESULT hr = coreapp_v50_cached_properties(&impl->private_properties,value);
+    TRACE("COREAPP50_PRIVATE_PROPERTIES hr=%#lx value=%p\n",hr,value ? *value : NULL);
+    return hr;
+}
+static const ICoreApplicationPrivate_v50Vtbl private_v50_vtbl =
+{
+    private_v50_QueryInterface,
+    private_v50_AddRef,
+    private_v50_Release,
+    private_v50_GetIids,
+    private_v50_GetRuntimeClassName,
+    private_v50_GetTrustLevel,
+    private_v50_UnknownSlot6,
+    private_v50_get_PrivateProperties
+};
+
 static struct factory factory =
 {
     {&activation_factory_vtbl},
     {&coreapp_vtbl},
+    {&private_v50_vtbl},
+    NULL,
+    NULL,
     1,
 };
 
