@@ -131,7 +131,7 @@
 @ stdcall CheckRemoteDebuggerPresent(long ptr)
 # @ stub CheckTokenCapability
 @ stdcall CheckTokenMembership(long ptr ptr)
-# @ stub CheckTokenMembershipEx
+@ stdcall CheckTokenMembershipEx(long ptr long ptr)
 @ stdcall ChrCmpIA(long long)
 @ stdcall ChrCmpIW(long long)
 @ stdcall ClearCommBreak(long)
@@ -494,6 +494,8 @@
 @ stdcall GetCurrentPackageFullName(ptr ptr)
 @ stdcall GetCurrentPackageId(ptr ptr)
 @ stdcall GetCurrentPackageInfo(long ptr ptr ptr)
+@ stdcall GetCurrentPackageInfo2(long long ptr ptr ptr)
+@ stdcall GetCurrentPackageInfo3(long long ptr ptr ptr)
 @ stdcall GetCurrentPackagePath(ptr ptr)
 # @ stub GetCurrentPackageResourcesContext
 # @ stub GetCurrentPackageSecurityContext

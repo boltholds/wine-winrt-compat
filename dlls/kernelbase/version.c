@@ -1594,6 +1594,61 @@ LONG WINAPI GetCurrentPackageInfo( const UINT32 flags, UINT32 *buffer_size, BYTE
 }
 
 /***********************************************************************
+ *         GetCurrentPackageInfo2   (kernelbase.@)
+ *
+ * Limited unpackaged-process implementation. The Wine package graph is not
+ * implemented: do not claim that a package identity or its files exist.
+ * PackagePathType has six currently documented values (0 through 5).
+ */
+LONG WINAPI GetCurrentPackageInfo2( UINT32 flags, UINT32 package_path_type, UINT32 *buffer_length,
+                                    BYTE *buffer, UINT32 *count );
+
+LONG WINAPI GetCurrentPackageInfo2( UINT32 flags, UINT32 package_path_type, UINT32 *buffer_length,
+                                    BYTE *buffer, UINT32 *count )
+{
+    TRACE("flags %#x, package_path_type %#x, buffer_length %p, buffer %p, count %p\n",
+            flags, package_path_type, buffer_length, buffer, count);
+
+    if (package_path_type > 5 || !buffer_length)
+        return ERROR_INVALID_PARAMETER;
+    if (!buffer && *buffer_length)
+        return ERROR_INVALID_PARAMETER;
+
+    /* In Wine, GetCurrentPackageInfo already reports this process as
+     * unpackaged. Do not modify the caller's output parameters on failure. */
+    return APPMODEL_ERROR_NO_PACKAGE;
+}
+
+/***********************************************************************
+ *         GetCurrentPackageInfo3   (kernelbase.@)
+ *
+ * Limited unpackaged-process implementation of the documented 5-argument
+ * API.  Wine's GetCurrentPackageInfo() already reports NO_PACKAGE for this
+ * runtime, so do not manufacture a package graph or generation ID here.
+ */
+LONG WINAPI GetCurrentPackageInfo3( UINT32 flags, UINT32 info_type, UINT32 *buffer_length,
+                                    void *buffer, UINT32 *count );
+
+LONG WINAPI GetCurrentPackageInfo3( UINT32 flags, UINT32 info_type, UINT32 *buffer_length,
+                                    void *buffer, UINT32 *count )
+{
+    TRACE("flags %#x, info_type %#x, buffer_length %p, buffer %p, count %p\n",
+            flags, info_type, buffer_length, buffer, count);
+
+    /* The only currently documented PackageInfo3Type is Generation (16). */
+    if (info_type != 16 || !buffer_length)
+        return ERROR_INVALID_PARAMETER;
+
+    if (!buffer && *buffer_length)
+        return ERROR_INVALID_PARAMETER;
+
+    /* A failure does not claim that package information exists and does not
+     * change caller-owned output buffers. This mirrors Wine's existing
+     * GetCurrentPackageInfo() no-package behavior, not full AppModel support. */
+    return APPMODEL_ERROR_NO_PACKAGE;
+}
+
+/***********************************************************************
  *         GetCurrentPackagePath   (kernelbase.@)
  */
 LONG WINAPI /* DECLSPEC_HOTPATCH */ GetCurrentPackagePath( UINT32 *length, WCHAR *path )

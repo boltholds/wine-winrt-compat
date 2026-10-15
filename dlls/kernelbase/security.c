@@ -617,6 +617,43 @@ exit:
     return ret;
 }
 
+/******************************************************************************
+ * CheckTokenMembershipEx    (kernelbase.@)
+ *
+ * Implement the Win8 API-set entry point using Wine's existing group-enabled
+ * token membership check. Wine currently reports non-AppContainer tokens, so
+ * CTMF_INCLUDE_APPCONTAINER has no extra grant semantics in this build.
+ * This intentionally never fabricates successful SID membership.
+ */
+BOOL WINAPI CheckTokenMembershipEx( HANDLE token, PSID sid_to_check, DWORD flags, PBOOL is_member )
+{
+    /* securitybaseapi.h: CTMF_INCLUDE_APPCONTAINER = 1. */
+    const DWORD valid_flags = 0x00000001;
+
+    TRACE("token %p, sid %s, flags %#lx, member %p\n", token,
+            debugstr_sid(sid_to_check), flags, is_member);
+
+    if (!is_member)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+    *is_member = FALSE;
+
+    if (flags & ~valid_flags)
+    {
+        SetLastError( ERROR_INVALID_PARAMETER );
+        return FALSE;
+    }
+    if (!sid_to_check || !IsValidSid( sid_to_check ))
+    {
+        SetLastError( ERROR_INVALID_SID );
+        return FALSE;
+    }
+
+    return CheckTokenMembership( token, sid_to_check, is_member );
+}
+
 /*************************************************************************
  * CreateRestrictedToken    (kernelbase.@)
  */
