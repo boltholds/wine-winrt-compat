@@ -45,7 +45,9 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends \
-            flex bison gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64
+            flex bison gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxi-dev libxinerama-dev libxcomposite-dev libxfixes-dev
       - name: Configure out-of-tree Wine PE64
         run: |
           mkdir -p build-pe64
