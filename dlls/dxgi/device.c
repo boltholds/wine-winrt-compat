@@ -21,6 +21,19 @@
 
 WINE_DEFAULT_DEBUG_CHANNEL(dxgi);
 
+/* Private XAML DXGI IID observed on Windows 11 10.0.22000.2245.
+ * The opt-in preserves the default behavior of Wine installations. */
+static const GUID iid_dxgi_device_xaml =
+    {0xf898b024, 0xb5c8, 0x42cd, {0xa1, 0x4f, 0xac, 0x5a, 0xdb, 0xf4, 0xbe, 0x22}};
+
+static BOOL dxgi_xaml_experiment_enabled(void)
+{
+    char enabled[2];
+
+    return GetEnvironmentVariableA("WINE_XAML_DXGI_EXPERIMENT", enabled, sizeof(enabled)) == 1
+            && enabled[0] == '1';
+}
+
 static void STDMETHODCALLTYPE dxgi_null_wined3d_object_destroyed(void *parent) {}
 
 static const struct wined3d_parent_ops dxgi_null_wined3d_parent_ops =
@@ -58,6 +71,13 @@ static HRESULT STDMETHODCALLTYPE dxgi_device_QueryInterface(IWineDXGIDevice *ifa
     {
         IUnknown_AddRef(iface);
         *object = &device->IWineDXGISwapChainFactory_iface;
+        return S_OK;
+    }
+
+    if (IsEqualGUID(riid, &iid_dxgi_device_xaml) && dxgi_xaml_experiment_enabled())
+    {
+        IUnknown_AddRef(iface);
+        *object = &device->xaml_device_iface;
         return S_OK;
     }
 
@@ -105,6 +125,73 @@ static ULONG STDMETHODCALLTYPE dxgi_device_Release(IWineDXGIDevice *iface)
 
     return refcount;
 }
+
+/* Diagnostic emulation of the private Win11 XAML GPU-priority contract.
+ * Set(1) is the only value observed in the Shapr3D XAML caller. This does
+ * not adjust host GPU scheduling and is not yet full Windows compatibility. */
+static inline struct dxgi_device *impl_from_dxgi_xaml_device(struct dxgi_xaml_device_interface *iface)
+{
+    return CONTAINING_RECORD(iface, struct dxgi_device, xaml_device_iface);
+}
+
+static HRESULT STDMETHODCALLTYPE dxgi_xaml_device_QueryInterface(struct dxgi_xaml_device_interface *iface,
+        REFIID riid, void **object)
+{
+    struct dxgi_device *device = impl_from_dxgi_xaml_device(iface);
+
+    return dxgi_device_QueryInterface(&device->IWineDXGIDevice_iface, riid, object);
+}
+
+static ULONG STDMETHODCALLTYPE dxgi_xaml_device_AddRef(struct dxgi_xaml_device_interface *iface)
+{
+    struct dxgi_device *device = impl_from_dxgi_xaml_device(iface);
+
+    return dxgi_device_AddRef(&device->IWineDXGIDevice_iface);
+}
+
+static ULONG STDMETHODCALLTYPE dxgi_xaml_device_Release(struct dxgi_xaml_device_interface *iface)
+{
+    struct dxgi_device *device = impl_from_dxgi_xaml_device(iface);
+
+    return dxgi_device_Release(&device->IWineDXGIDevice_iface);
+}
+
+static HRESULT STDMETHODCALLTYPE dxgi_xaml_device_SetInProcessGPUPriority(struct dxgi_xaml_device_interface *iface,
+        INT priority)
+{
+    struct dxgi_device *device = impl_from_dxgi_xaml_device(iface);
+
+    if (priority != 1)
+    {
+        WARN("Unverified XAML GPU priority %d, returning E_NOTIMPL.\n", priority);
+        return E_NOTIMPL;
+    }
+
+    InterlockedExchange(&device->xaml_priority, priority);
+    FIXME("Experimental XAML GPU priority %d is stored but not applied to the host GPU scheduler.\n", priority);
+    return S_OK;
+}
+
+static HRESULT STDMETHODCALLTYPE dxgi_xaml_device_GetInProcessGPUPriority(struct dxgi_xaml_device_interface *iface,
+        INT *priority)
+{
+    struct dxgi_device *device = impl_from_dxgi_xaml_device(iface);
+
+    if (!priority)
+        return E_INVALIDARG;
+
+    *priority = InterlockedCompareExchange(&device->xaml_priority, 0, 0);
+    return S_OK;
+}
+
+static const struct dxgi_xaml_device_vtbl dxgi_xaml_device_vtbl =
+{
+    dxgi_xaml_device_QueryInterface,
+    dxgi_xaml_device_AddRef,
+    dxgi_xaml_device_Release,
+    dxgi_xaml_device_SetInProcessGPUPriority,
+    dxgi_xaml_device_GetInProcessGPUPriority,
+};
 
 /* IDXGIObject methods */
 
@@ -539,6 +626,8 @@ HRESULT dxgi_device_init(struct dxgi_device *device, struct dxgi_device_layer *l
 
     device->IWineDXGIDevice_iface.lpVtbl = &dxgi_device_vtbl;
     device->IWineDXGISwapChainFactory_iface.lpVtbl = &dxgi_swapchain_factory_vtbl;
+    device->xaml_device_iface.lpVtbl = &dxgi_xaml_device_vtbl;
+    device->xaml_priority = 0;
     device->refcount = 1;
     wined3d_mutex_lock();
     wined3d_private_store_init(&device->private_store);
