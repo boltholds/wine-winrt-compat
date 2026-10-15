@@ -350,6 +350,30 @@ void WINAPI DECLSPEC_HOTPATCH RaiseFailFastException( EXCEPTION_RECORD *record, 
 
     WARN( "(%p, %p, %lx)\n", record, context, flags );
 
+    /* v51 diagnostic: retain the original RaiseFailFastException semantics.
+     * Stack frames and exception metadata only; no suppressed error. */
+    {
+        char trace_mode[4];
+        if (GetEnvironmentVariableA("WINE_COREAPP_FAILFAST_TRACE_V51",trace_mode,sizeof(trace_mode))==1 &&
+            trace_mode[0]=='1')
+        {
+            void *frames[24];
+            USHORT n=RtlCaptureStackBackTrace(0,ARRAY_SIZE(frames),frames,NULL);
+            UINT i;
+            TRACE("COREAPP51_FAILFAST_METADATA record=%p code=%#lx flags=%#lx address=%p count=%lu context=%p context_rip=%p\n",
+                  record, record ? record->ExceptionCode : 0,
+                  record ? record->ExceptionFlags : 0,
+                  record ? record->ExceptionAddress : NULL,
+                  record ? record->NumberParameters : 0, context,
+                  context ? (void *)context->Rip : NULL);
+            if (record)
+                for(i=0;i<record->NumberParameters && i<EXCEPTION_MAXIMUM_PARAMETERS;i++)
+                    TRACE("COREAPP51_FAILFAST_ARG %u %#Ix\n",i,record->ExceptionInformation[i]);
+            for(i=0;i<n;i++) TRACE("COREAPP51_FAILFAST_FRAME %u %p\n",i,frames[i]);
+        }
+    }
+
+
     if (flags & FAIL_FAST_NO_HARD_ERROR_DLG)
         TerminateProcess( GetCurrentProcess(), STATUS_FAIL_FAST_EXCEPTION );
 
