@@ -96,20 +96,43 @@ static ULONG STDMETHODCALLTYPE propertyset_Release( IPropertySet *iface )
 
 static HRESULT STDMETHODCALLTYPE propertyset_GetIids( IPropertySet *iface, ULONG *iid_count, IID **iids )
 {
-    FIXME( "(%p, %p, %p) stub!\n", iface, iid_count, iids );
-    return E_NOTIMPL;
+    const IID supported[] =
+    {
+        /* These four interfaces are already available through QueryInterface
+         * or through the existing map_inner implementation. Native Windows
+         * advertises an additional IWeakReferenceSource; Wine currently does
+         * not implement it, so do not advertise that unsupported IID. */
+        IID_IMap_HSTRING_IInspectable,
+        IID_IIterable_IKeyValuePair_HSTRING_IInspectable,
+        IID_IObservableMap_HSTRING_IInspectable,
+        IID_IPropertySet,
+    };
+    IID *allocated;
+
+    if (!iid_count || !iids) return E_POINTER;
+    *iid_count = 0;
+    *iids = NULL;
+    allocated = CoTaskMemAlloc( sizeof( supported ) );
+    if (!allocated) return E_OUTOFMEMORY;
+    memcpy(allocated, supported, sizeof(supported));
+    *iids = allocated;
+    *iid_count = ARRAY_SIZE(supported);
+    return S_OK;
 }
 
 static HRESULT STDMETHODCALLTYPE propertyset_GetRuntimeClassName( IPropertySet *iface, HSTRING *class_name )
 {
-    FIXME( "(%p, %p) stub!\n", iface, class_name );
-    return E_NOTIMPL;
+    const WCHAR *name = RuntimeClass_Windows_Foundation_Collections_PropertySet;
+    if (!class_name) return E_POINTER;
+    *class_name = NULL;
+    return WindowsCreateString(name,wcslen(name),class_name);
 }
 
 static HRESULT STDMETHODCALLTYPE propertyset_GetTrustLevel( IPropertySet *iface, TrustLevel *trust_level )
 {
-    FIXME( "(%p, %p) stub!\n", iface, trust_level );
-    return E_NOTIMPL;
+    if (!trust_level) return E_POINTER;
+    *trust_level = BaseTrust;
+    return S_OK;
 }
 
 static const IPropertySetVtbl propertyset_vtbl =
