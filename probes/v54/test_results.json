@@ -1,0 +1,53 @@
+{
+  "candidate_sha256": "55f603cc4521901a41d535afc1b8aa530dd59bcec716180f8b59f6f7eaa8f67b",
+  "original_sha256": "63747669d8286097ddfc3effe3b36914c99da491124413fcc791276c1baa8a10",
+  "cases": {
+    "v47": {
+      "exit": 0,
+      "pass": true,
+      "sha256": "1c87b1b2edd61588ec2243e29ec133bcd000a1130895a86c38cd8599ff3f097a",
+      "markers": [
+        "V54_FACTORY_HR=0x00000000",
+        "V54_COREAPP_HR=0x00000000",
+        "V54_RUN_HR=0x80004001",
+        "V54_COUNTS CREATE=1 QI=1 INITIALIZE=0 SETWINDOW=0 LOAD=0 RUN=0 UNINIT=0",
+        "V54_FINAL_REFERENCES SOURCE=1 VIEW=1",
+        "V54_TEST_STATUS=PASS"
+      ]
+    },
+    "init_ok": {
+      "exit": 0,
+      "pass": true,
+      "sha256": "95c5a9b048c382c1eeea1133368b84a8b1c16183d7bd84b66455e0c7bcb136cb",
+      "markers": [
+        "V54_FACTORY_HR=0x00000000",
+        "V54_COREAPP_HR=0x00000000",
+        "V54_INITIALIZE_CALLED=1 CORE_PTR_NULL=0",
+        "V54_INITIALIZE_COREVIEW_QI_HR=0x00000000",
+        "V54_INITIALIZE_GET_COREWINDOW_HR=0x80004001",
+        "V54_UNINITIALIZE_CALLED=1",
+        "V54_RUN_HR=0x80004001",
+        "V54_COUNTS CREATE=1 QI=1 INITIALIZE=1 SETWINDOW=0 LOAD=0 RUN=0 UNINIT=1",
+        "V54_FINAL_REFERENCES SOURCE=1 VIEW=1",
+        "V54_TEST_STATUS=PASS"
+      ]
+    },
+    "init_fail": {
+      "exit": 0,
+      "pass": true,
+      "sha256": "2713e6d3bfc53540ddd606b6986259e1da596e4fd0fc6bd482c70422d8b57c17",
+      "markers": [
+        "V54_FACTORY_HR=0x00000000",
+        "V54_COREAPP_HR=0x00000000",
+        "V54_INITIALIZE_CALLED=1 CORE_PTR_NULL=0",
+        "V54_INITIALIZE_COREVIEW_QI_HR=0x00000000",
+        "V54_INITIALIZE_GET_COREWINDOW_HR=0x80004001",
+        "V54_RUN_HR=0x80004005",
+        "V54_COUNTS CREATE=1 QI=1 INITIALIZE=1 SETWINDOW=0 LOAD=0 RUN=0 UNINIT=0",
+        "V54_FINAL_REFERENCES SOURCE=1 VIEW=1",
+        "V54_TEST_STATUS=PASS"
+      ]
+    }
+  },
+  "original_binary_restored": true
+}

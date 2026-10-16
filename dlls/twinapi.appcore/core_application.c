@@ -309,6 +309,115 @@ static HRESULT WINAPI coreapp_GetCurrentView(ICoreApplication *iface, ICoreAppli
     return E_NOTIMPL;
 }
 
+
+/* v54: bounded CoreApplicationView for initialization contract experiments.
+ * This is NOT a CoreWindow and deliberately cannot report one. */
+struct coreview_v54
+{
+    ICoreApplicationView ICoreApplicationView_iface;
+    LONG refs;
+};
+static inline struct coreview_v54 *impl_from_coreview_v54(ICoreApplicationView *iface)
+{
+    return CONTAINING_RECORD(iface,struct coreview_v54,ICoreApplicationView_iface);
+}
+static ULONG WINAPI coreview_v54_AddRef(ICoreApplicationView *iface)
+{
+    return InterlockedIncrement(&impl_from_coreview_v54(iface)->refs);
+}
+static ULONG WINAPI coreview_v54_Release(ICoreApplicationView *iface)
+{
+    struct coreview_v54 *obj=impl_from_coreview_v54(iface);
+    ULONG refs=InterlockedDecrement(&obj->refs);
+    if (!refs) free(obj);
+    return refs;
+}
+static HRESULT WINAPI coreview_v54_QueryInterface(ICoreApplicationView *iface,REFIID iid,void **value)
+{
+    if (!value) return E_POINTER;
+    *value=NULL;
+    if (IsEqualGUID(iid,&IID_IUnknown) || IsEqualGUID(iid,&IID_IInspectable) ||
+        IsEqualGUID(iid,&IID_ICoreApplicationView))
+    {
+        *value=iface;
+        coreview_v54_AddRef(iface);
+        return S_OK;
+    }
+    return E_NOINTERFACE;
+}
+static HRESULT WINAPI coreview_v54_GetIids(ICoreApplicationView *iface,ULONG *count,IID **iids)
+{
+    if (count) *count=0;
+    if (iids) *iids=NULL;
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI coreview_v54_GetRuntimeClassName(ICoreApplicationView *iface,HSTRING *name)
+{
+    if (name) *name=NULL;
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI coreview_v54_GetTrustLevel(ICoreApplicationView *iface,TrustLevel *level)
+{
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI coreview_v54_get_CoreWindow(ICoreApplicationView *iface,__x_ABI_CWindows_CUI_CCore_CICoreWindow **window)
+{
+    if (!window) return E_POINTER;
+    *window=NULL;
+    TRACE("COREAPP54_GET_COREWINDOW_UNSUPPORTED\n");
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI coreview_v54_add_Activated(ICoreApplicationView *iface,
+    ITypedEventHandler_CoreApplicationView_IActivatedEventArgs *handler,EventRegistrationToken *token)
+{
+    if (!token) return E_POINTER;
+    token->value=0;
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI coreview_v54_remove_Activated(ICoreApplicationView *iface,EventRegistrationToken token)
+{
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI coreview_v54_get_IsMain(ICoreApplicationView *iface,boolean *value)
+{
+    if (!value) return E_POINTER;
+    *value=FALSE;
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI coreview_v54_get_IsHosted(ICoreApplicationView *iface,boolean *value)
+{
+    if (!value) return E_POINTER;
+    *value=FALSE;
+    return E_NOTIMPL;
+}
+static const ICoreApplicationViewVtbl coreview_v54_vtbl =
+{
+    coreview_v54_QueryInterface,coreview_v54_AddRef,coreview_v54_Release,
+    coreview_v54_GetIids,coreview_v54_GetRuntimeClassName,coreview_v54_GetTrustLevel,
+    coreview_v54_get_CoreWindow,coreview_v54_add_Activated,coreview_v54_remove_Activated,
+    coreview_v54_get_IsMain,coreview_v54_get_IsHosted
+};
+static HRESULT coreview_v54_probe_initialize(IFrameworkView *view)
+{
+    struct coreview_v54 *obj=calloc(1,sizeof(*obj));
+    HRESULT hr;
+    if (!obj) return E_OUTOFMEMORY;
+    obj->ICoreApplicationView_iface.lpVtbl=&coreview_v54_vtbl;
+    obj->refs=1;
+    hr=IFrameworkView_Initialize(view,&obj->ICoreApplicationView_iface);
+    TRACE("COREAPP54_INITIALIZE hr=%#lx remaining_refs=%ld\n",hr,obj->refs);
+    /* Run cannot succeed: no CoreWindow or dispatcher was created.
+     * Uninitialize only if Initialize succeeded, then propagate E_NOTIMPL. */
+    if (SUCCEEDED(hr))
+    {
+        HRESULT cleanup=IFrameworkView_Uninitialize(view);
+        TRACE("COREAPP54_UNINITIALIZE hr=%#lx\n",cleanup);
+        if (FAILED(cleanup)) hr=cleanup;
+    }
+    coreview_v54_Release(&obj->ICoreApplicationView_iface);
+    return FAILED(hr)?hr:E_NOTIMPL;
+}
+
 static HRESULT WINAPI coreapp_Run(ICoreApplication *iface, IFrameworkViewSource *view_source)
 {
     IFrameworkViewSource *source = NULL;
@@ -347,11 +456,31 @@ static HRESULT WINAPI coreapp_Run(ICoreApplication *iface, IFrameworkViewSource 
 
     hr = IFrameworkView_QueryInterface(view, &IID_IFrameworkView, (void **)&verified);
     TRACE("COREAPP47_RUN_VIEW_QI hr %#lx verified %p\n", hr, verified);
-    if (verified) IFrameworkView_Release(verified);
-    IFrameworkView_Release(view);
-    if (FAILED(hr)) return hr;
-    if (!verified) return E_FAIL;
+    if (FAILED(hr))
+    {
+        if (verified) IFrameworkView_Release(verified);
+        IFrameworkView_Release(view);
+        return hr;
+    }
+    if (!verified)
+    {
+        IFrameworkView_Release(view);
+        return E_FAIL;
+    }
 
+    {
+        char v54[4];
+        if (GetEnvironmentVariableA("WINE_COREAPP_VIEW_INIT_V54",v54,sizeof(v54))==1 && v54[0]=='1')
+        {
+            hr=coreview_v54_probe_initialize(verified);
+            IFrameworkView_Release(verified);
+            IFrameworkView_Release(view);
+            TRACE("COREAPP54_RUN_STOP %#lx (window/dispatcher not implemented)\n",hr);
+            return hr;
+        }
+    }
+    IFrameworkView_Release(verified);
+    IFrameworkView_Release(view);
     TRACE("COREAPP47_RUN_STOP E_NOTIMPL (window lifecycle deliberately absent)\n");
     return E_NOTIMPL;
 }
