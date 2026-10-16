@@ -1,0 +1,8 @@
+{
+  "v47_regression": "17/17 PASS",
+  "baseline_sha256": "63747669d8286097ddfc3effe3b36914c99da491124413fcc791276c1baa8a10",
+  "candidate_sha256": "35824872aa90c8fa5e239417516dd17aeda2126a80f387ad88f73cef9760ce0b",
+  "exit_code": 0,
+  "log_sha256": "e6d8380d9d7d10e4fb53414722993dd1ef0c6e9bd4d99aaf90d0f62e3d87ad43",
+  "laboratory_dll_exactly_restored": true
+}
