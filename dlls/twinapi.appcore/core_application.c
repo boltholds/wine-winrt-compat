@@ -301,21 +301,30 @@ static HRESULT WINAPI coreapp_get_Properties(ICoreApplication *iface, IPropertyS
     return hr;
 }
 
+static HRESULT coreview_v56_get_current(ICoreApplicationView **value);
+
 static HRESULT WINAPI coreapp_GetCurrentView(ICoreApplication *iface, ICoreApplicationView **value)
 {
-    FIXME("iface %p, value %p: not implemented.\n", iface, value);
     if (!value) return E_INVALIDARG;
-    *value = NULL;
-    return E_NOTIMPL;
+    *value=NULL;
+    return coreview_v56_get_current(value);
 }
 
 
 /* v54: bounded CoreApplicationView for initialization contract experiments.
  * This is NOT a CoreWindow and deliberately cannot report one. */
+/* A v56 ICoreApplicationView owns an extra CoreWindow COM reference,
+ * independently of the separate HWND-held reference in windows.ui.dll. */
+typedef __x_ABI_CWindows_CUI_CCore_CICoreWindow corewindow_v56_iface;
+typedef HRESULT (WINAPI *corewindow_v56_create_fn)(corewindow_v56_iface **,HWND *);
+
 struct coreview_v54
 {
     ICoreApplicationView ICoreApplicationView_iface;
     LONG refs;
+    DWORD owner_tid;
+    corewindow_v56_iface *window;
+    HWND hwnd;
 };
 static inline struct coreview_v54 *impl_from_coreview_v54(ICoreApplicationView *iface)
 {
@@ -329,7 +338,12 @@ static ULONG WINAPI coreview_v54_Release(ICoreApplicationView *iface)
 {
     struct coreview_v54 *obj=impl_from_coreview_v54(iface);
     ULONG refs=InterlockedDecrement(&obj->refs);
-    if (!refs) free(obj);
+    if (!refs)
+    {
+        if (obj->window)
+            obj->window->lpVtbl->Release(obj->window);
+        free(obj);
+    }
     return refs;
 }
 static HRESULT WINAPI coreview_v54_QueryInterface(ICoreApplicationView *iface,REFIID iid,void **value)
@@ -362,10 +376,21 @@ static HRESULT WINAPI coreview_v54_GetTrustLevel(ICoreApplicationView *iface,Tru
 }
 static HRESULT WINAPI coreview_v54_get_CoreWindow(ICoreApplicationView *iface,__x_ABI_CWindows_CUI_CCore_CICoreWindow **window)
 {
+    struct coreview_v54 *obj=impl_from_coreview_v54(iface);
     if (!window) return E_POINTER;
     *window=NULL;
-    TRACE("COREAPP54_GET_COREWINDOW_UNSUPPORTED\n");
-    return E_NOTIMPL;
+    if (!obj->window)
+    {
+        TRACE("COREAPP54_GET_COREWINDOW_UNSUPPORTED\n");
+        return E_NOTIMPL;
+    }
+    if (obj->owner_tid!=GetCurrentThreadId()) return RPC_E_WRONG_THREAD;
+    if (!obj->hwnd || !IsWindow(obj->hwnd))
+        return HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE);
+    obj->window->lpVtbl->AddRef(obj->window);
+    *window=obj->window;
+    TRACE("COREAPP56_COREWINDOW_PROVIDED hwnd=%p\n",obj->hwnd);
+    return S_OK;
 }
 static HRESULT WINAPI coreview_v54_add_Activated(ICoreApplicationView *iface,
     ITypedEventHandler_CoreApplicationView_IActivatedEventArgs *handler,EventRegistrationToken *token)
@@ -416,6 +441,148 @@ static HRESULT coreview_v54_probe_initialize(IFrameworkView *view)
     }
     coreview_v54_Release(&obj->ICoreApplicationView_iface);
     return FAILED(hr)?hr:E_NOTIMPL;
+}
+
+
+/* v56: strictly experimental CoreApplication.Run with a real thread-owned
+ * CoreWindow from windows.ui v55. Real WinRT activation/event parity is NOT
+ * implemented; the opt-in route is for lifecycle contract tests only.
+ */
+static INIT_ONCE coreview_v56_tls_once=INIT_ONCE_STATIC_INIT;
+static DWORD coreview_v56_tls=TLS_OUT_OF_INDEXES;
+
+static BOOL CALLBACK coreview_v56_init_tls(INIT_ONCE *once,void *unused,void **context)
+{
+    DWORD index=TlsAlloc();
+    if (index==TLS_OUT_OF_INDEXES) return FALSE;
+    coreview_v56_tls=index;
+    return TRUE;
+}
+static HRESULT coreview_v56_get_current(ICoreApplicationView **value)
+{
+    struct coreview_v54 *obj;
+    if (coreview_v56_tls==TLS_OUT_OF_INDEXES) return E_NOTIMPL;
+    obj=TlsGetValue(coreview_v56_tls);
+    if (!obj) return E_NOTIMPL;
+    if (GetCurrentThreadId()!=obj->owner_tid) return RPC_E_WRONG_THREAD;
+    coreview_v54_AddRef(&obj->ICoreApplicationView_iface);
+    *value=&obj->ICoreApplicationView_iface;
+    TRACE("COREAPP56_CURRENT_VIEW object=%p hwnd=%p\n",obj,obj->hwnd);
+    return S_OK;
+}
+static HRESULT coreview_v56_run_lifecycle(IFrameworkView *view)
+{
+    struct coreview_v54 *obj=NULL;
+    corewindow_v56_iface *window=NULL;
+    corewindow_v56_create_fn create=NULL;
+    HMODULE dll=NULL;
+    HWND hwnd=NULL;
+    HSTRING entrypoint=NULL;
+    HRESULT hr=S_OK, cleanup;
+    BOOL initialized=FALSE, tls_set=FALSE;
+
+    /* The private constructor exists only in our experimental windows.ui.
+     * Missing support must fail without inventing successful activation. */
+    dll=LoadLibraryW(L"windows.ui.dll");
+    if (!dll) return HRESULT_FROM_WIN32(GetLastError());
+    create=(corewindow_v56_create_fn)(void *)GetProcAddress(dll,"WineCoreWindowV55_Create");
+    if (!create)
+    {
+        hr=E_NOTIMPL;
+        TRACE("COREAPP56_NO_PRIVATE_WINDOW_CONSTRUCTOR\n");
+        goto done;
+    }
+    if (!InitOnceExecuteOnce(&coreview_v56_tls_once,coreview_v56_init_tls,NULL,NULL))
+    {
+        hr=E_OUTOFMEMORY;
+        goto done;
+    }
+    if (TlsGetValue(coreview_v56_tls))
+    {
+        hr=HRESULT_FROM_WIN32(ERROR_ALREADY_EXISTS);
+        goto done;
+    }
+    obj=calloc(1,sizeof(*obj));
+    if (!obj)
+    {
+        hr=E_OUTOFMEMORY;
+        goto done;
+    }
+    obj->ICoreApplicationView_iface.lpVtbl=&coreview_v54_vtbl;
+    obj->refs=1;
+    obj->owner_tid=GetCurrentThreadId();
+
+    hr=create(&window,&hwnd);
+    TRACE("COREAPP56_WINDOW_CREATE hr=%#lx hwnd=%p window=%p\n",hr,hwnd,window);
+    if (FAILED(hr)) goto done;
+    if (!window || !hwnd || !IsWindow(hwnd))
+    {
+        hr=E_FAIL;
+        goto done;
+    }
+    obj->window=window; /* Creator reference transferred to app-view. */
+    obj->hwnd=hwnd;
+    window=NULL;
+
+    if (!TlsSetValue(coreview_v56_tls,obj))
+    {
+        hr=HRESULT_FROM_WIN32(GetLastError());
+        goto done;
+    }
+    tls_set=TRUE;
+
+    hr=IFrameworkView_Initialize(view,&obj->ICoreApplicationView_iface);
+    TRACE("COREAPP56_INITIALIZE hr=%#lx\n",hr);
+    if (FAILED(hr)) goto done;
+    initialized=TRUE;
+
+    hr=IFrameworkView_SetWindow(view,obj->window);
+    TRACE("COREAPP56_SETWINDOW hr=%#lx\n",hr);
+    if (FAILED(hr)) goto done;
+
+    /* A blank HSTRING is used for this bounded contract probe. Packaged app
+     * activation entry-point semantics still require native Windows tests. */
+    hr=WindowsCreateString(L"",0,&entrypoint);
+    if (FAILED(hr)) goto done;
+    hr=IFrameworkView_Load(view,entrypoint);
+    TRACE("COREAPP56_LOAD hr=%#lx\n",hr);
+    if (FAILED(hr)) goto done;
+
+    hr=IFrameworkView_Run(view);
+    TRACE("COREAPP56_VIEW_RUN hr=%#lx\n",hr);
+
+done:
+    if (entrypoint) WindowsDeleteString(entrypoint);
+    if (initialized)
+    {
+        cleanup=IFrameworkView_Uninitialize(view);
+        TRACE("COREAPP56_UNINITIALIZE hr=%#lx\n",cleanup);
+        if (SUCCEEDED(hr) && FAILED(cleanup)) hr=cleanup;
+    }
+    if (obj && obj->window)
+    {
+        if (obj->hwnd && IsWindow(obj->hwnd))
+        {
+            cleanup=obj->window->lpVtbl->Close(obj->window);
+            TRACE("COREAPP56_CLOSE_WINDOW hr=%#lx\n",cleanup);
+            if (SUCCEEDED(hr) && FAILED(cleanup)) hr=cleanup;
+        }
+    }
+    if (tls_set)
+    {
+        if (!TlsSetValue(coreview_v56_tls,NULL) && SUCCEEDED(hr))
+            hr=HRESULT_FROM_WIN32(GetLastError());
+    }
+    if (window)
+    {
+        if (hwnd && IsWindow(hwnd))
+            window->lpVtbl->Close(window);
+        window->lpVtbl->Release(window);
+    }
+    if (obj) coreview_v54_Release(&obj->ICoreApplicationView_iface);
+    if (dll) FreeLibrary(dll);
+    TRACE("COREAPP56_LIFECYCLE_RETURN hr=%#lx\n",hr);
+    return hr;
 }
 
 static HRESULT WINAPI coreapp_Run(ICoreApplication *iface, IFrameworkViewSource *view_source)
@@ -472,10 +639,15 @@ static HRESULT WINAPI coreapp_Run(ICoreApplication *iface, IFrameworkViewSource 
         char v54[4];
         if (GetEnvironmentVariableA("WINE_COREAPP_VIEW_INIT_V54",v54,sizeof(v54))==1 && v54[0]=='1')
         {
-            hr=coreview_v54_probe_initialize(verified);
+            char v56[4];
+            if (GetEnvironmentVariableA("WINE_COREAPP_LIFECYCLE_V56",v56,sizeof(v56))==1 &&
+                v56[0]=='1')
+                hr=coreview_v56_run_lifecycle(verified);
+            else
+                hr=coreview_v54_probe_initialize(verified);
             IFrameworkView_Release(verified);
             IFrameworkView_Release(view);
-            TRACE("COREAPP54_RUN_STOP %#lx (window/dispatcher not implemented)\n",hr);
+            TRACE("COREAPP56_OR_54_RUN_RETURN %#lx\n",hr);
             return hr;
         }
     }
