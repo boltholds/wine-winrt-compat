@@ -5,3 +5,4 @@
 @ stdcall -private DllUnregisterServer()
 @ stub CreateControlInput
 @ stub CreateControlInputEx
+@ stdcall -private WineCoreWindowV55_Create(ptr ptr)
