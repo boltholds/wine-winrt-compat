@@ -1,0 +1,48 @@
+name: WinRT v55 CoreWindow experimental PE64 build
+
+on:
+  push:
+    branches: [experiment/winrt-v55-corewindow]
+    paths:
+      - "dlls/windows.ui/**"
+      - "probes/v55/**"
+      - ".github/workflows/winrt-v55-corewindow.yml"
+  pull_request:
+    branches: [experiment/winrt-v54-coreview-initialize]
+    paths:
+      - "dlls/windows.ui/**"
+      - "probes/v55/**"
+      - ".github/workflows/winrt-v55-corewindow.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile-prototype:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate recorded smoke cases
+        run: python3 -m unittest discover -s probes/v55/tests -v
+      - name: Install Wine build requirements
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends flex bison gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev libxcomposite-dev libxfixes-dev libfreetype-dev
+      - name: Configure Wine PE64
+        run: |
+          mkdir build-pe64
+          cd build-pe64
+          ../configure --enable-win64 --with-mingw --disable-tests
+      - name: Compile windows.ui.dll
+        run: |
+          make -C build-pe64 -j4 dlls/windows.ui/x86_64-windows/windows.ui.dll
+          file build-pe64/dlls/windows.ui/x86_64-windows/windows.ui.dll | grep -q 'PE32+'
+      - name: Cross-compile standalone v55 COM probe
+        run: |
+          x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wno-unused-parameter -Wno-cast-function-type -Ibuild-pe64/include -Iinclude -o /tmp/v55-corewindow.exe probes/v55/corewindow_smoke.c build-pe64/dlls/combase/x86_64-windows/libcombase.a -lole32 -luser32 -luuid
+          file /tmp/v55-corewindow.exe | grep -q 'PE32+'
+          sha256sum /tmp/v55-corewindow.exe
