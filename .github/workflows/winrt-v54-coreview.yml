@@ -1,0 +1,66 @@
+name: v54 CoreApplicationView ABI and PE64 build
+
+on:
+  push:
+    branches: ["experiment/winrt-v54-coreview-initialize"]
+    paths:
+      - "dlls/twinapi.appcore/**"
+      - "probes/v54/**"
+      - ".github/workflows/winrt-v54-coreview.yml"
+  pull_request:
+    branches: ["experiment/winrt-v47-v51"]
+    paths:
+      - "dlls/twinapi.appcore/**"
+      - "probes/v54/**"
+      - ".github/workflows/winrt-v54-coreview.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  source-and-build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate captured mock results
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,pathlib
+          p=pathlib.Path("probes/v54")
+          doc=json.loads((p/"test_results.json").read_text())
+          assert doc["original_binary_restored"] is True
+          assert set(doc["cases"])=={"v47","init_ok","init_fail"}
+          for case in doc["cases"].values():
+              assert case["exit"]==0 and case["pass"] is True
+          assert doc["cases"]["init_ok"]["markers"][-1]=="V54_TEST_STATUS=PASS"
+          assert (p/"full_frameworkview_mock.c").is_file()
+          print("v54: three captured mock test cases validated; runtime not rerun in CI")
+          PY
+      - name: Install build requirements
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            flex bison gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxi-dev libxinerama-dev libxcomposite-dev libxfixes-dev libfreetype-dev
+      - name: Configure Wine PE64
+        run: |
+          mkdir build-pe64
+          cd build-pe64
+          ../configure --enable-win64 --with-mingw --disable-tests
+      - name: Build modified twinapi.appcore.dll
+        run: |
+          make -C build-pe64 -j4 dlls/twinapi.appcore/x86_64-windows/twinapi.appcore.dll
+          file build-pe64/dlls/twinapi.appcore/x86_64-windows/twinapi.appcore.dll | grep -q 'PE32+'
+      - name: Compile full v54 mock
+        run: |
+          x86_64-w64-mingw32-gcc -std=c11 -O2 -Wall -Wno-unused-parameter -Wno-cast-function-type \
+            -Ibuild-pe64/include -Iinclude -o /tmp/v54_full_mock.exe \
+            probes/v54/full_frameworkview_mock.c \
+            build-pe64/dlls/combase/x86_64-windows/libcombase.a -lole32 -luuid
+          file /tmp/v54_full_mock.exe | grep -q 'PE32+'
+          sha256sum /tmp/v54_full_mock.exe
