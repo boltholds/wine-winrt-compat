@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "revision": "v52-Wine11.19-CoreApplicationRun-root-cause",
+  "verified_date_utc": "2026-10-15",
+  "project": "wine-winrt-compat",
+  "lab_source_commit": "a312fc87a501a447576effe8b02444558f9bbf30",
+  "xaml_component": "Windows.UI.Xaml.dll",
+  "xaml_activation_class": "Windows.UI.Xaml.FrameworkViewSource",
+  "exact_observations": {
+    "first_incomplete_cleanup_run": {
+      "reason": "Old test-only WinRT registration target path was removed during duplicate cleanup",
+      "create_view_hresult": "0x8007007E",
+      "load_status": "0xC0000135",
+      "classification": "test-environment-artifact",
+      "fixed_by": "SHA-pinned reference to retained disposable test clone XAML DLL"
+    },
+    "after_repair": {
+      "view_source_create_view_hresult": "0x00000000",
+      "framework_view_queryinterface_hresult": "0x00000000",
+      "framework_view_source_activation_hresult": "0x00000000",
+      "core_application_queryinterface_hresult": "0x00000000",
+      "core_application_run_hresult": "0x80004001",
+      "shapr3d_exception_projection_hresult": "0x80004001",
+      "dotnet_native_failfast_code": "0x302BFF64",
+      "shcore51_scale_sink_registration": "S_OK cookie=1",
+      "accessible_window_achieved": false
+    }
+  },
+  "verified_dynamic_breakpoint_rvas": {
+    "xaml_activation_return": "0x1AA373",
+    "xaml_coreapplication_queryinterface_return": "0x1AA39B",
+    "xaml_coreapplication_run_return": "0x1AA3C6",
+    "shapr3d_hresult_projection": "0x1A3ED89"
+  },
+  "static_abi": {
+    "nested_xaml_vtable_call_byte_offset": "0x68",
+    "target_interface": "ICoreApplication",
+    "coreapplication_run_vtable_index": 13
+  },
+  "raw_evidence": {
+    "wine_dbg_three_breakpoints_log_sha256": "5275ac3ee86c770f4f8b68da662cc472a5351771b13a8faa335eb201079806ae",
+    "native_xaml_dll_sha256": "f3f6acf04a8ab9f7eb02c0052a6267b02b34caa47f07c413963613e27e639f46",
+    "source_restoration_report": "restoration-v52.json in local diagnostic evidence archive",
+    "baseline_coreapp47_regression": "17/17 PASS",
+    "local_tests_of_ported_5_PE_DLLs": "5/5 build targets PASS",
+    "github_workflow_v47_v51": "CI success previously observed in PR #2"
+  },
+  "limits": {
+    "run_lifecycle_implemented": false,
+    "actual_corewindow_created": false,
+    "coredispatcher_implemented": false,
+    "highcontrastchanged_native_success_proven": false,
+    "interactive_shapr3d_ui_demonstrated": false,
+    "no_proprietary_application_binaries_committed": true
+  },
+  "note": "Observable ABI/result evidence for a particular Windows application and Wine build; not a proposal to suppress or spoof errors."
+}
