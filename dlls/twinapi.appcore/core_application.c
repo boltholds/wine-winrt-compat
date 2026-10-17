@@ -346,8 +346,20 @@ static ULONG WINAPI coreview_v54_Release(ICoreApplicationView *iface)
     }
     return refs;
 }
+/* v57 diagnostic-only CoreApplicationView method tracing.
+ * Preserves all HRESULTs, tokens, COM ownership and call ordering.
+ * Runtime opt-in: WINE_COREAPP_INIT_TRACE_V57=1 (+twinapi).
+ */
+static BOOL v57_trace_enabled(void)
+{
+    char value[4];
+    return GetEnvironmentVariableA("WINE_COREAPP_INIT_TRACE_V57",value,sizeof(value))==1 &&
+           value[0]=='1';
+}
+
 static HRESULT WINAPI coreview_v54_QueryInterface(ICoreApplicationView *iface,REFIID iid,void **value)
 {
+    if (v57_trace_enabled()) TRACE("COREAPP57_CALL_QI iface=%p iid=%s out=%p\n",iface,debugstr_guid(iid),value);
     if (!value) return E_POINTER;
     *value=NULL;
     if (IsEqualGUID(iid,&IID_IUnknown) || IsEqualGUID(iid,&IID_IInspectable) ||
@@ -361,21 +373,25 @@ static HRESULT WINAPI coreview_v54_QueryInterface(ICoreApplicationView *iface,RE
 }
 static HRESULT WINAPI coreview_v54_GetIids(ICoreApplicationView *iface,ULONG *count,IID **iids)
 {
+    if (v57_trace_enabled()) TRACE("COREAPP57_CALL_GETIIDS iface=%p count=%p iids=%p\n",iface,count,iids);
     if (count) *count=0;
     if (iids) *iids=NULL;
     return E_NOTIMPL;
 }
 static HRESULT WINAPI coreview_v54_GetRuntimeClassName(ICoreApplicationView *iface,HSTRING *name)
 {
+    if (v57_trace_enabled()) TRACE("COREAPP57_CALL_GETCLASS iface=%p name=%p\n",iface,name);
     if (name) *name=NULL;
     return E_NOTIMPL;
 }
 static HRESULT WINAPI coreview_v54_GetTrustLevel(ICoreApplicationView *iface,TrustLevel *level)
 {
+    if (v57_trace_enabled()) TRACE("COREAPP57_CALL_GETTRUST iface=%p level=%p\n",iface,level);
     return E_NOTIMPL;
 }
 static HRESULT WINAPI coreview_v54_get_CoreWindow(ICoreApplicationView *iface,__x_ABI_CWindows_CUI_CCore_CICoreWindow **window)
 {
+    if (v57_trace_enabled()) TRACE("COREAPP57_CALL_GETWINDOW iface=%p window=%p\n",iface,window);
     struct coreview_v54 *obj=impl_from_coreview_v54(iface);
     if (!window) return E_POINTER;
     *window=NULL;
@@ -395,22 +411,26 @@ static HRESULT WINAPI coreview_v54_get_CoreWindow(ICoreApplicationView *iface,__
 static HRESULT WINAPI coreview_v54_add_Activated(ICoreApplicationView *iface,
     ITypedEventHandler_CoreApplicationView_IActivatedEventArgs *handler,EventRegistrationToken *token)
 {
+    if (v57_trace_enabled()) TRACE("COREAPP57_CALL_ADD_ACTIVATED iface=%p handler=%p token=%p\n",iface,handler,token);
     if (!token) return E_POINTER;
     token->value=0;
     return E_NOTIMPL;
 }
 static HRESULT WINAPI coreview_v54_remove_Activated(ICoreApplicationView *iface,EventRegistrationToken token)
 {
+    if (v57_trace_enabled()) TRACE("COREAPP57_CALL_REMOVE_ACTIVATED iface=%p token=%#I64x\n",iface,(ULONGLONG)token.value);
     return E_NOTIMPL;
 }
 static HRESULT WINAPI coreview_v54_get_IsMain(ICoreApplicationView *iface,boolean *value)
 {
+    if (v57_trace_enabled()) TRACE("COREAPP57_CALL_GET_ISMAIN iface=%p value=%p\n",iface,value);
     if (!value) return E_POINTER;
     *value=FALSE;
     return E_NOTIMPL;
 }
 static HRESULT WINAPI coreview_v54_get_IsHosted(ICoreApplicationView *iface,boolean *value)
 {
+    if (v57_trace_enabled()) TRACE("COREAPP57_CALL_GET_ISHOSTED iface=%p value=%p\n",iface,value);
     if (!value) return E_POINTER;
     *value=FALSE;
     return E_NOTIMPL;
