@@ -19,6 +19,7 @@
 
 #include "private.h"
 #include "roapi.h"
+#include "objbase.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(twinapi);
 
@@ -36,6 +37,17 @@ typedef struct ICoreApplicationPrivate_v50Vtbl
     HRESULT (WINAPI *GetTrustLevel)(ICoreApplicationPrivate_v50 *, TrustLevel *);
     HRESULT (WINAPI *UnknownSlot6)(ICoreApplicationPrivate_v50 *);
     HRESULT (WINAPI *get_PrivateProperties)(ICoreApplicationPrivate_v50 *, IPropertySet **);
+    /* Observed Windows 11 vtable slots 8..10, semantics still unknown.
+     * Never report success or mutate unknown arguments. */
+    HRESULT (WINAPI *ReservedSlot8)(ICoreApplicationPrivate_v50 *);
+    HRESULT (WINAPI *ReservedSlot9)(ICoreApplicationPrivate_v50 *);
+    HRESULT (WINAPI *ReservedSlot10)(ICoreApplicationPrivate_v50 *);
+    /* Native v64 callback IID: EventHandler<UnhandledErrorDetectedEventArgs>.
+     * Slot 11 forwards handler + token; slot 12 forwards a token.
+     * ABI is experimental and Win64-only.
+     */
+    HRESULT (WINAPI *add_UnhandledErrorDetected)(ICoreApplicationPrivate_v50 *, IUnknown *, EventRegistrationToken *);
+    HRESULT (WINAPI *remove_UnhandledErrorDetected)(ICoreApplicationPrivate_v50 *, EventRegistrationToken);
 } ICoreApplicationPrivate_v50Vtbl;
 
 struct ICoreApplicationPrivate_v50
@@ -508,6 +520,8 @@ static HRESULT coreview_v56_get_current(ICoreApplicationView **value)
     TRACE("COREAPP56_CURRENT_VIEW object=%p hwnd=%p\n",obj,obj->hwnd);
     return S_OK;
 }
+static void unhandled_v65_clear_all(void); /* final release after bounded Run */
+
 static HRESULT coreview_v56_run_lifecycle(IFrameworkView *view)
 {
     struct coreview_v54 *obj=NULL;
@@ -597,6 +611,10 @@ done:
         TRACE("COREAPP56_UNINITIALIZE hr=%#lx\n",cleanup);
         if (SUCCEEDED(hr) && FAILED(cleanup)) hr=cleanup;
     }
+    /* A failed Initialize may have successfully subscribed a temporary XAML
+     * callback. Drop those references at the end of the bounded Run even if
+     * the app never reached its normal event-removal path. */
+    unhandled_v65_clear_all();
     if (obj && obj->window)
     {
         if (obj->hwnd && IsWindow(obj->hwnd))
@@ -720,6 +738,123 @@ static const struct ICoreApplicationVtbl coreapp_vtbl =
     coreapp_RunWithActivationFactories,
 };
 
+/* v65: constrained handling for a native-observed internal ABI.
+ * The callback is the public Windows.Foundation.EventHandler<UnhandledErrorDetectedEventArgs>
+ * delegate with IID f68bc421-6b54-559b-9cdd-489aad0bd41d.  Native XAML calls
+ * private CoreApplication slot 11 to register, slot 12 to revoke.
+ *
+ * This stage implements COM lifetime + token registration only. It does NOT
+ * intercept, manufacture or swallow unhandled errors, and does not claim
+ * that any exception-notification pipeline is operational. The opt-in MUST
+ * remain off in production Wine until that pipeline is implemented.
+ */
+static const GUID IID_eventhandler_unhandled_v65 =
+    {0xf68bc421,0x6b54,0x559b,{0x9c,0xdd,0x48,0x9a,0xad,0x0b,0xd4,0x1d}};
+
+struct unhandled_subscription_v65
+{
+    struct unhandled_subscription_v65 *next;
+    EventRegistrationToken token;
+    IUnknown *handler;
+};
+static SRWLOCK unhandled_v65_lock = SRWLOCK_INIT;
+static struct unhandled_subscription_v65 *unhandled_v65_handlers;
+static ULONGLONG unhandled_v65_next_token = 1;
+
+static BOOL unhandled_v65_enabled(void)
+{
+    char value[4];
+    return GetEnvironmentVariableA("WINE_COREAPP_UNHANDLED_V65",value,sizeof(value)) == 1 &&
+           value[0] == '1';
+}
+
+static HRESULT unhandled_v65_add(IUnknown *handler, EventRegistrationToken *token)
+{
+    struct unhandled_subscription_v65 *entry;
+    IUnknown *verified = NULL;
+    HRESULT hr;
+
+    if (!token) return E_POINTER;
+    token->value = 0;
+    if (!handler) return E_POINTER;
+    if (!unhandled_v65_enabled()) return E_NOTIMPL;
+    if (FAILED(hr = IUnknown_QueryInterface(handler, &IID_eventhandler_unhandled_v65,
+                                           (void **)&verified)))
+        return hr;
+    if (!verified) return E_FAIL; /* Never manufacture a registration. */
+
+    if (!(entry = calloc(1, sizeof(*entry))))
+    {
+        IUnknown_Release(verified);
+        return E_OUTOFMEMORY;
+    }
+    entry->handler = verified; /* QueryInterface provided our owning COM ref. */
+    AcquireSRWLockExclusive(&unhandled_v65_lock);
+    if (!unhandled_v65_next_token || unhandled_v65_next_token > 0x7fffffffffffffffULL)
+    {
+        ReleaseSRWLockExclusive(&unhandled_v65_lock);
+        IUnknown_Release(verified);
+        free(entry);
+        return HRESULT_FROM_WIN32(ERROR_ARITHMETIC_OVERFLOW);
+    }
+    entry->token.value = unhandled_v65_next_token++;
+    entry->next = unhandled_v65_handlers;
+    unhandled_v65_handlers = entry;
+    *token = entry->token;
+    ReleaseSRWLockExclusive(&unhandled_v65_lock);
+
+    TRACE("COREAPP65_UNHANDLED_ADD handler=%p token=%#I64x\n",
+          verified, (ULONGLONG)token->value);
+    return S_OK;
+}
+
+static HRESULT unhandled_v65_remove(EventRegistrationToken token)
+{
+    struct unhandled_subscription_v65 *entry = NULL, **cursor;
+
+    if (!unhandled_v65_enabled()) return E_NOTIMPL;
+    AcquireSRWLockExclusive(&unhandled_v65_lock);
+    cursor = &unhandled_v65_handlers;
+    while (*cursor && (*cursor)->token.value != token.value)
+        cursor = &(*cursor)->next;
+    if (*cursor)
+    {
+        entry = *cursor;
+        *cursor = entry->next;
+    }
+    ReleaseSRWLockExclusive(&unhandled_v65_lock);
+
+    if (!entry) return HRESULT_FROM_WIN32(ERROR_NOT_FOUND);
+    TRACE("COREAPP65_UNHANDLED_REMOVE handler=%p token=%#I64x\n",
+          entry->handler, (ULONGLONG)token.value);
+    IUnknown_Release(entry->handler);
+    free(entry);
+    return S_OK;
+}
+
+/* Never release a COM callback under the subscription lock: a callback's
+ * final Release may reenter application code. */
+static void unhandled_v65_clear_all(void)
+{
+    struct unhandled_subscription_v65 *entry, *next;
+    ULONG count = 0;
+
+    AcquireSRWLockExclusive(&unhandled_v65_lock);
+    entry = unhandled_v65_handlers;
+    unhandled_v65_handlers = NULL;
+    ReleaseSRWLockExclusive(&unhandled_v65_lock);
+
+    while (entry)
+    {
+        next = entry->next;
+        IUnknown_Release(entry->handler);
+        free(entry);
+        entry = next;
+        count++;
+    }
+    if (count) TRACE("COREAPP65_UNHANDLED_CLEAR count=%lu\n", count);
+}
+
 static inline struct factory *impl_from_v50_private(ICoreApplicationPrivate_v50 *iface)
 {
     return CONTAINING_RECORD(iface,struct factory,ICoreApplicationPrivate_v50_iface);
@@ -769,6 +904,31 @@ static HRESULT WINAPI private_v50_get_PrivateProperties(ICoreApplicationPrivate_
     TRACE("COREAPP50_PRIVATE_PROPERTIES hr=%#lx value=%p\n",hr,value ? *value : NULL);
     return hr;
 }
+static HRESULT WINAPI private_v65_reserved8(ICoreApplicationPrivate_v50 *iface)
+{
+    TRACE("COREAPP65_RESERVED8_NOTIMPL\n");
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI private_v65_reserved9(ICoreApplicationPrivate_v50 *iface)
+{
+    TRACE("COREAPP65_RESERVED9_NOTIMPL\n");
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI private_v65_reserved10(ICoreApplicationPrivate_v50 *iface)
+{
+    TRACE("COREAPP65_RESERVED10_NOTIMPL\n");
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI private_v65_add_UnhandledErrorDetected(
+    ICoreApplicationPrivate_v50 *iface, IUnknown *handler, EventRegistrationToken *token)
+{
+    return unhandled_v65_add(handler, token);
+}
+static HRESULT WINAPI private_v65_remove_UnhandledErrorDetected(
+    ICoreApplicationPrivate_v50 *iface, EventRegistrationToken token)
+{
+    return unhandled_v65_remove(token);
+}
 static const ICoreApplicationPrivate_v50Vtbl private_v50_vtbl =
 {
     private_v50_QueryInterface,
@@ -778,7 +938,12 @@ static const ICoreApplicationPrivate_v50Vtbl private_v50_vtbl =
     private_v50_GetRuntimeClassName,
     private_v50_GetTrustLevel,
     private_v50_UnknownSlot6,
-    private_v50_get_PrivateProperties
+    private_v50_get_PrivateProperties,
+    private_v65_reserved8,
+    private_v65_reserved9,
+    private_v65_reserved10,
+    private_v65_add_UnhandledErrorDetected,
+    private_v65_remove_UnhandledErrorDetected
 };
 
 static struct factory factory =
