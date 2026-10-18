@@ -320,19 +320,124 @@ static HRESULT WINAPI coreapp_get_Id(ICoreApplication *iface, HSTRING *value)
     return E_NOTIMPL;
 }
 
+/* v67: the real XAML Initialize first requests ICoreApplication::Suspending
+ * registration after resolving ICoreApplication2. The public ABI is already
+ * declared by windows.applicationmodel.core.idl: a typed COM handler and
+ * caller-owned EventRegistrationToken outparameter.
+ *
+ * Registration and removal are supported for bounded single-view diagnostics
+ * only. No OS suspension notification is dispatched: production use MUST NOT
+ * enable WINE_COREAPP_SUSPENDING_V67.
+ */
+struct suspending_v67_entry
+{
+    struct suspending_v67_entry *next;
+    IUnknown *handler; /* owning canonical IUnknown reference */
+    EventRegistrationToken token;
+};
+static SRWLOCK suspending_v67_lock = SRWLOCK_INIT;
+static struct suspending_v67_entry *suspending_v67_entries;
+static ULONGLONG suspending_v67_next_token = 1;
+static ULONG suspending_v67_entry_count;
+
+static BOOL suspending_v67_enabled(void)
+{
+    char flag[4];
+    return GetEnvironmentVariableA("WINE_COREAPP_SUSPENDING_V67", flag, sizeof(flag)) == 1 &&
+           flag[0] == '1';
+}
+
 static HRESULT WINAPI coreapp_add_Suspending(ICoreApplication *iface,
         IEventHandler_SuspendingEventArgs *handler, EventRegistrationToken *token)
 {
-    FIXME("iface %p, handler %p, token %p: not implemented.\n", iface, handler, token);
+    struct suspending_v67_entry *entry;
+    IUnknown *canonical = NULL;
+    HRESULT hr;
+
     if (!token) return E_INVALIDARG;
     token->value = 0;
-    return E_NOTIMPL;
+    if (!suspending_v67_enabled()) return E_NOTIMPL;
+    if (!handler) return E_INVALIDARG;
+    /* A real WinRT delegate is COM; retain a canonical IUnknown reference
+     * rather than assuming an implementation-specific callback layout. */
+    hr = IUnknown_QueryInterface((IUnknown *)handler, &IID_IUnknown, (void **)&canonical);
+    if (FAILED(hr)) return hr;
+    if (!canonical) return E_FAIL;
+    if (!(entry = calloc(1, sizeof(*entry))))
+    {
+        IUnknown_Release(canonical);
+        return E_OUTOFMEMORY;
+    }
+    entry->handler = canonical;
+
+    AcquireSRWLockExclusive(&suspending_v67_lock);
+    if (suspending_v67_entry_count >= 32 ||
+        !suspending_v67_next_token || suspending_v67_next_token > 0x7fffffffffffffffULL)
+    {
+        ReleaseSRWLockExclusive(&suspending_v67_lock);
+        IUnknown_Release(canonical);
+        free(entry);
+        return HRESULT_FROM_WIN32(ERROR_TOO_MANY_OPEN_FILES);
+    }
+    entry->token.value = suspending_v67_next_token++;
+    entry->next = suspending_v67_entries;
+    suspending_v67_entries = entry;
+    suspending_v67_entry_count++;
+    *token = entry->token;
+    ReleaseSRWLockExclusive(&suspending_v67_lock);
+
+    TRACE("COREAPP67_SUSPENDING_ADD handler=%p token=%#I64x\n",
+          canonical, (ULONGLONG)token->value);
+    return S_OK;
 }
 
 static HRESULT WINAPI coreapp_remove_Suspending(ICoreApplication *iface, EventRegistrationToken token)
 {
-    FIXME("iface %p, token %I64d: not implemented.\n", iface, token.value);
-    return E_NOTIMPL;
+    struct suspending_v67_entry *entry = NULL, **cursor;
+
+    if (!suspending_v67_enabled()) return E_NOTIMPL;
+    AcquireSRWLockExclusive(&suspending_v67_lock);
+    cursor = &suspending_v67_entries;
+    while (*cursor && (*cursor)->token.value != token.value)
+        cursor = &(*cursor)->next;
+    if (*cursor)
+    {
+        entry = *cursor;
+        *cursor = entry->next;
+        suspending_v67_entry_count--;
+    }
+    ReleaseSRWLockExclusive(&suspending_v67_lock);
+
+    if (!entry) return HRESULT_FROM_WIN32(ERROR_NOT_FOUND);
+    TRACE("COREAPP67_SUSPENDING_REMOVE handler=%p token=%#I64x\n",
+          entry->handler, (ULONGLONG)token.value);
+    IUnknown_Release(entry->handler);
+    free(entry);
+    return S_OK;
+}
+
+/* Drop any remaining references on bounded Run exit. No COM Release under
+ * lock, since the callback destructor may re-enter application code. */
+static void suspending_v67_clear_all(void)
+{
+    struct suspending_v67_entry *entry, *next;
+    ULONG count = 0;
+
+    AcquireSRWLockExclusive(&suspending_v67_lock);
+    entry = suspending_v67_entries;
+    suspending_v67_entries = NULL;
+    suspending_v67_entry_count = 0;
+    ReleaseSRWLockExclusive(&suspending_v67_lock);
+
+    while (entry)
+    {
+        next = entry->next;
+        IUnknown_Release(entry->handler);
+        free(entry);
+        entry = next;
+        count++;
+    }
+    if (count) TRACE("COREAPP67_SUSPENDING_CLEAR count=%lu\n", count);
 }
 
 static HRESULT WINAPI coreapp_add_Resuming(ICoreApplication *iface,
@@ -660,6 +765,7 @@ done:
      * callback. Drop those references at the end of the bounded Run even if
      * the app never reached its normal event-removal path. */
     unhandled_v65_clear_all();
+    suspending_v67_clear_all();
     if (obj && obj->window)
     {
         if (obj->hwnd && IsWindow(obj->hwnd))
