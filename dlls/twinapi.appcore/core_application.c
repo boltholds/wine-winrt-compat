@@ -852,7 +852,7 @@ static void unhandled_v65_clear_all(void)
         entry = next;
         count++;
     }
-    if (count) TRACE("COREAPP65_UNHANDLED_CLEAR count=%lu\\n", count);
+    if (count) TRACE("COREAPP65_UNHANDLED_CLEAR count=%lu\n", count);
 }
 
 static inline struct factory *impl_from_v50_private(ICoreApplicationPrivate_v50 *iface)
