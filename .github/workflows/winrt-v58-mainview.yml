@@ -1,0 +1,47 @@
+name: Wine v58 experimental primary CoreApplicationView IsMain
+
+on:
+  push:
+    branches: [experiment/winrt-v58-mainview]
+    paths:
+      - "dlls/twinapi.appcore/**"
+      - "probes/v58/**"
+      - ".github/workflows/winrt-v58-mainview.yml"
+  pull_request:
+    branches: [experiment/winrt-v57-initialize-trace]
+    paths:
+      - "dlls/twinapi.appcore/**"
+      - "probes/v58/**"
+      - ".github/workflows/winrt-v58-mainview.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify bounded behavior
+        run: python3 -m unittest discover -s probes/v58/tests -v
+      - name: Install PE64 prerequisites
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends \
+            flex bison gcc-mingw-w64-x86-64 g++-mingw-w64-x86-64 \
+            libx11-dev libxext-dev libxrandr-dev libxcursor-dev \
+            libxi-dev libxinerama-dev libxcomposite-dev libxfixes-dev libfreetype-dev
+      - name: Configure Wine 11.19
+        run: |
+          mkdir build-pe64
+          cd build-pe64
+          ../configure --enable-win64 --with-mingw --disable-tests
+      - name: Cross-compile twinapi.appcore.dll
+        run: |
+          make -C build-pe64 -j4 dlls/twinapi.appcore/x86_64-windows/twinapi.appcore.dll
+          file build-pe64/dlls/twinapi.appcore/x86_64-windows/twinapi.appcore.dll | grep -q 'PE32+'
+          sha256sum build-pe64/dlls/twinapi.appcore/x86_64-windows/twinapi.appcore.dll

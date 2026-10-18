@@ -423,10 +423,28 @@ static HRESULT WINAPI coreview_v54_remove_Activated(ICoreApplicationView *iface,
 }
 static HRESULT WINAPI coreview_v54_get_IsMain(ICoreApplicationView *iface,boolean *value)
 {
+    struct coreview_v54 *obj=impl_from_coreview_v54(iface);
+    char enabled[4];
     if (v57_trace_enabled()) TRACE("COREAPP57_CALL_GET_ISMAIN iface=%p value=%p\n",iface,value);
     if (!value) return E_POINTER;
     *value=FALSE;
-    return E_NOTIMPL;
+
+    /* v58: the only supported CoreApplication.Run view is its main view.
+     * Never report main-view state for a v54 placeholder or an unowned HWND.
+     * Preserve E_NOTIMPL with the explicit experiment flag disabled.
+     */
+    if (GetEnvironmentVariableA("WINE_COREAPP_MAINVIEW_V58",enabled,sizeof(enabled))!=1 ||
+        enabled[0]!='1' || !obj->window)
+        return E_NOTIMPL;
+    if (GetCurrentThreadId()!=obj->owner_tid)
+        return RPC_E_WRONG_THREAD;
+    if (!obj->hwnd || !IsWindow(obj->hwnd))
+        return HRESULT_FROM_WIN32(ERROR_INVALID_WINDOW_HANDLE);
+
+    *value=TRUE;
+    TRACE("COREAPP58_ISMAIN_SUCCESS hwnd=%p tid=%lu value=%u\n",
+          obj->hwnd,obj->owner_tid,(unsigned)*value);
+    return S_OK;
 }
 static HRESULT WINAPI coreview_v54_get_IsHosted(ICoreApplicationView *iface,boolean *value)
 {
