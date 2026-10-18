@@ -104,7 +104,7 @@ class V65UnhandledABI(unittest.TestCase):
         )[0]
         self.assertLess(lifecycle.index("COREAPP56_UNINITIALIZE"),
                         lifecycle.index("unhandled_v65_clear_all();"))
-        cleanup = SRC.split("static void unhandled_v65_clear_all(void)\\n{", 1)[1].split(
+        cleanup = SRC.split("static void unhandled_v65_clear_all(void)\n{", 1)[1].split(
             "static inline struct factory *impl_from_v50_private(", 1
         )[0]
         self.assertIn("unhandled_v65_handlers = NULL;", cleanup)
