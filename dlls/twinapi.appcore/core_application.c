@@ -19,6 +19,7 @@
 
 #include "private.h"
 #include "roapi.h"
+#include "objbase.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(twinapi);
 
@@ -174,10 +175,41 @@ static ULONG WINAPI activation_factory_Release( IActivationFactory *iface )
     return ref;
 }
 
+/* v59: expose only IIDs that this experimental factory really supports.
+ * Private extensions deliberately stay cloaked: they are not public WinRT
+ * metadata interfaces. The returned array is owned by the caller and must
+ * be freed with CoTaskMemFree, as required by IInspectable::GetIids.
+ */
 static HRESULT WINAPI activation_factory_GetIids( IActivationFactory *iface, ULONG *iid_count, IID **iids )
 {
-    FIXME( "iface %p, iid_count %p, iids %p stub!\n", iface, iid_count, iids );
-    return E_NOTIMPL;
+    char enabled[4], statics[4];
+    BOOL include_statics;
+    IID *result;
+    ULONG count;
+
+    if (!iid_count || !iids) return E_POINTER;
+    *iid_count = 0;
+    *iids = NULL;
+
+    /* Preserve upstream behavior unless the experiment is explicitly enabled. */
+    if (GetEnvironmentVariableA("WINE_COREAPP_GETIIDS_V59", enabled, sizeof(enabled)) != 1 ||
+        enabled[0] != '1')
+        return E_NOTIMPL;
+
+    include_statics = GetEnvironmentVariableA("WINE_COREAPP_EXPERIMENT", statics, sizeof(statics)) == 1 &&
+                      statics[0] == '1';
+    count = include_statics ? 2 : 1;
+    result = CoTaskMemAlloc(count * sizeof(*result));
+    if (!result) return E_OUTOFMEMORY;
+
+    result[0] = IID_IActivationFactory;
+    if (include_statics) result[1] = IID_ICoreApplication;
+    *iids = result;
+    *iid_count = count;
+
+    TRACE("COREAPP59_GETIIDS_SUCCESS iface=%p count=%lu public_statics=%u\n",
+          iface, count, (unsigned)include_statics);
+    return S_OK;
 }
 
 static HRESULT WINAPI activation_factory_GetRuntimeClassName( IActivationFactory *iface, HSTRING *class_name )
