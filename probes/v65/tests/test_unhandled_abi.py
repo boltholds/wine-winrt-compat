@@ -96,6 +96,23 @@ class V65UnhandledABI(unittest.TestCase):
         self.assertIn("COREAPP50_PRIVATE_PROPERTIES", SRC)
         self.assertIn("COREAPP50_PRIVATE_QI_OK", SRC)
 
+    def test_run_teardown_releases_remaining_subscriptions(self):
+        self.assertIn("static void unhandled_v65_clear_all(void);", SRC)
+        self.assertIn("unhandled_v65_clear_all();", SRC)
+        lifecycle = SRC.split("static HRESULT coreview_v56_run_lifecycle(", 1)[1].split(
+            "static HRESULT WINAPI coreapp_Run(", 1
+        )[0]
+        self.assertLess(lifecycle.index("COREAPP56_UNINITIALIZE"),
+                        lifecycle.index("unhandled_v65_clear_all();"))
+        cleanup = SRC.split("static void unhandled_v65_clear_all(void)\\n{", 1)[1].split(
+            "static inline struct factory *impl_from_v50_private(", 1
+        )[0]
+        self.assertIn("unhandled_v65_handlers = NULL;", cleanup)
+        self.assertIn("IUnknown_Release(entry->handler);", cleanup)
+        self.assertIn("COREAPP65_UNHANDLED_CLEAR", cleanup)
+        self.assertLess(cleanup.index("ReleaseSRWLockExclusive(&unhandled_v65_lock);"),
+                        cleanup.index("IUnknown_Release(entry->handler);"))
+
     def test_64bit_only_guard_is_documented(self):
         self.assertIn("Win64-only", SRC)
 
