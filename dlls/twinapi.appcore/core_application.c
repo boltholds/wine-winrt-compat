@@ -65,11 +65,40 @@ static BOOL v50_private_enabled(void)
 }
 
 
+/* v66: ABI-only view of public ICoreApplication2, as declared in
+ * windows.applicationmodel.core.idl. It is NOT an implementation of
+ * background transitions or prelaunch. All seven domain operations remain
+ * E_NOTIMPL and are instrumented to identify the real XAML callsite.
+ * EventHandler<> pointers use ABI-identical IUnknown* placeholders here.
+ */
+typedef struct coreapp2_v66 coreapp2_v66;
+typedef struct coreapp2_v66_vtbl
+{
+    HRESULT (WINAPI *QueryInterface)(coreapp2_v66 *, REFIID, void **);
+    ULONG (WINAPI *AddRef)(coreapp2_v66 *);
+    ULONG (WINAPI *Release)(coreapp2_v66 *);
+    HRESULT (WINAPI *GetIids)(coreapp2_v66 *, ULONG *, IID **);
+    HRESULT (WINAPI *GetRuntimeClassName)(coreapp2_v66 *, HSTRING *);
+    HRESULT (WINAPI *GetTrustLevel)(coreapp2_v66 *, TrustLevel *);
+    HRESULT (WINAPI *add_BackgroundActivated)(coreapp2_v66 *, IUnknown *, EventRegistrationToken *);
+    HRESULT (WINAPI *remove_BackgroundActivated)(coreapp2_v66 *, EventRegistrationToken);
+    HRESULT (WINAPI *add_LeavingBackground)(coreapp2_v66 *, IUnknown *, EventRegistrationToken *);
+    HRESULT (WINAPI *remove_LeavingBackground)(coreapp2_v66 *, EventRegistrationToken);
+    HRESULT (WINAPI *add_EnteredBackground)(coreapp2_v66 *, IUnknown *, EventRegistrationToken *);
+    HRESULT (WINAPI *remove_EnteredBackground)(coreapp2_v66 *, EventRegistrationToken);
+    HRESULT (WINAPI *EnablePrelaunch)(coreapp2_v66 *, boolean);
+} coreapp2_v66_vtbl;
+struct coreapp2_v66
+{
+    const coreapp2_v66_vtbl *lpVtbl;
+};
+
 struct factory
 {
     IActivationFactory IActivationFactory_iface;
     ICoreApplication ICoreApplication_iface;
     ICoreApplicationPrivate_v50 ICoreApplicationPrivate_v50_iface;
+    coreapp2_v66 coreapp2_v66_iface;
     IPropertySet *private_properties;
     IPropertySet *public_properties;
     LONG ref;
@@ -163,6 +192,22 @@ static HRESULT WINAPI activation_factory_QueryInterface( IActivationFactory *ifa
         *out = &impl->ICoreApplicationPrivate_v50_iface;
         TRACE("COREAPP50_PRIVATE_QI_OK iface=%p out=%p\n",*out,out);
         return S_OK;
+    }
+
+    /* v66: expose ICoreApplication2's real IID solely for method-call
+     * tracing; each method reports E_NOTIMPL until its behavior is proven.
+     */
+    if (IsEqualGUID(iid, &IID_ICoreApplication2))
+    {
+        char flag[4];
+        if (GetEnvironmentVariableA("WINE_COREAPP2_TRACE_V66", flag, sizeof(flag)) == 1 &&
+            flag[0] == '1')
+        {
+            IActivationFactory_AddRef(&impl->IActivationFactory_iface);
+            *out = &impl->coreapp2_v66_iface;
+            TRACE("COREAPP66_QI_COREAPP2_OK iface=%p\n", *out);
+            return S_OK;
+        }
     }
 
     FIXME( "%s not implemented, returning E_NOINTERFACE.\n", debugstr_guid( iid ) );
@@ -946,11 +991,117 @@ static const ICoreApplicationPrivate_v50Vtbl private_v50_vtbl =
     private_v65_remove_UnhandledErrorDetected
 };
 
+/* v66: ICoreApplication2 intentionally instrumented rather than emulated.
+ * Interface is WinRT IInspectable + seven IDL-defined methods. */
+static inline struct factory *impl_from_coreapp2_v66(coreapp2_v66 *iface)
+{
+    return CONTAINING_RECORD(iface, struct factory, coreapp2_v66_iface);
+}
+static HRESULT WINAPI coreapp2_v66_QueryInterface(coreapp2_v66 *iface, REFIID iid, void **out)
+{
+    struct factory *impl = impl_from_coreapp2_v66(iface);
+    return activation_factory_QueryInterface(&impl->IActivationFactory_iface, iid, out);
+}
+static ULONG WINAPI coreapp2_v66_AddRef(coreapp2_v66 *iface)
+{
+    struct factory *impl = impl_from_coreapp2_v66(iface);
+    return activation_factory_AddRef(&impl->IActivationFactory_iface);
+}
+static ULONG WINAPI coreapp2_v66_Release(coreapp2_v66 *iface)
+{
+    struct factory *impl = impl_from_coreapp2_v66(iface);
+    return activation_factory_Release(&impl->IActivationFactory_iface);
+}
+static HRESULT WINAPI coreapp2_v66_GetIids(coreapp2_v66 *iface, ULONG *count, IID **iids)
+{
+    TRACE("COREAPP66_CALL_GETIIDS iface=%p\n", iface);
+    if (!count || !iids) return E_POINTER;
+    *count = 0;
+    *iids = NULL;
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI coreapp2_v66_GetRuntimeClassName(coreapp2_v66 *iface, HSTRING *name)
+{
+    TRACE("COREAPP66_CALL_GET_RUNTIME_CLASS_NAME iface=%p\n", iface);
+    if (!name) return E_POINTER;
+    *name = NULL;
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI coreapp2_v66_GetTrustLevel(coreapp2_v66 *iface, TrustLevel *level)
+{
+    TRACE("COREAPP66_CALL_GET_TRUST_LEVEL iface=%p\n", iface);
+    if (!level) return E_POINTER;
+    return E_NOTIMPL;
+}
+static HRESULT coreapp2_v66_reject_add(const char *name, IUnknown *handler, EventRegistrationToken *token)
+{
+    TRACE("COREAPP66_CALL_%s handler=%p token=%p\n", name, handler, token);
+    if (!token) return E_POINTER;
+    token->value = 0;
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI coreapp2_v66_add_BackgroundActivated(
+    coreapp2_v66 *iface, IUnknown *handler, EventRegistrationToken *token)
+{
+    return coreapp2_v66_reject_add("ADD_BACKGROUND_ACTIVATED", handler, token);
+}
+static HRESULT WINAPI coreapp2_v66_remove_BackgroundActivated(
+    coreapp2_v66 *iface, EventRegistrationToken token)
+{
+    TRACE("COREAPP66_CALL_REMOVE_BACKGROUND_ACTIVATED token=%#I64x\n", (ULONGLONG)token.value);
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI coreapp2_v66_add_LeavingBackground(
+    coreapp2_v66 *iface, IUnknown *handler, EventRegistrationToken *token)
+{
+    return coreapp2_v66_reject_add("ADD_LEAVING_BACKGROUND", handler, token);
+}
+static HRESULT WINAPI coreapp2_v66_remove_LeavingBackground(
+    coreapp2_v66 *iface, EventRegistrationToken token)
+{
+    TRACE("COREAPP66_CALL_REMOVE_LEAVING_BACKGROUND token=%#I64x\n", (ULONGLONG)token.value);
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI coreapp2_v66_add_EnteredBackground(
+    coreapp2_v66 *iface, IUnknown *handler, EventRegistrationToken *token)
+{
+    return coreapp2_v66_reject_add("ADD_ENTERED_BACKGROUND", handler, token);
+}
+static HRESULT WINAPI coreapp2_v66_remove_EnteredBackground(
+    coreapp2_v66 *iface, EventRegistrationToken token)
+{
+    TRACE("COREAPP66_CALL_REMOVE_ENTERED_BACKGROUND token=%#I64x\n", (ULONGLONG)token.value);
+    return E_NOTIMPL;
+}
+static HRESULT WINAPI coreapp2_v66_EnablePrelaunch(coreapp2_v66 *iface, boolean value)
+{
+    TRACE("COREAPP66_CALL_ENABLE_PRELAUNCH value=%u\n", (unsigned)value);
+    return E_NOTIMPL;
+}
+
+static const coreapp2_v66_vtbl coreapp2_v66_vtbl_instance =
+{
+    coreapp2_v66_QueryInterface,
+    coreapp2_v66_AddRef,
+    coreapp2_v66_Release,
+    coreapp2_v66_GetIids,
+    coreapp2_v66_GetRuntimeClassName,
+    coreapp2_v66_GetTrustLevel,
+    coreapp2_v66_add_BackgroundActivated,
+    coreapp2_v66_remove_BackgroundActivated,
+    coreapp2_v66_add_LeavingBackground,
+    coreapp2_v66_remove_LeavingBackground,
+    coreapp2_v66_add_EnteredBackground,
+    coreapp2_v66_remove_EnteredBackground,
+    coreapp2_v66_EnablePrelaunch
+};
+
 static struct factory factory =
 {
     {&activation_factory_vtbl},
     {&coreapp_vtbl},
     {&private_v50_vtbl},
+    {&coreapp2_v66_vtbl_instance},
     NULL,
     NULL,
     1,
