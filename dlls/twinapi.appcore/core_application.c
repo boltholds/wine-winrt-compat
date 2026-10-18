@@ -520,6 +520,8 @@ static HRESULT coreview_v56_get_current(ICoreApplicationView **value)
     TRACE("COREAPP56_CURRENT_VIEW object=%p hwnd=%p\n",obj,obj->hwnd);
     return S_OK;
 }
+static void unhandled_v65_clear_all(void); /* final release after bounded Run */
+
 static HRESULT coreview_v56_run_lifecycle(IFrameworkView *view)
 {
     struct coreview_v54 *obj=NULL;
@@ -609,6 +611,10 @@ done:
         TRACE("COREAPP56_UNINITIALIZE hr=%#lx\n",cleanup);
         if (SUCCEEDED(hr) && FAILED(cleanup)) hr=cleanup;
     }
+    /* A failed Initialize may have successfully subscribed a temporary XAML
+     * callback. Drop those references at the end of the bounded Run even if
+     * the app never reached its normal event-removal path. */
+    unhandled_v65_clear_all();
     if (obj && obj->window)
     {
         if (obj->hwnd && IsWindow(obj->hwnd))
@@ -824,6 +830,29 @@ static HRESULT unhandled_v65_remove(EventRegistrationToken token)
     IUnknown_Release(entry->handler);
     free(entry);
     return S_OK;
+}
+
+/* Never release a COM callback under the subscription lock: a callback's
+ * final Release may reenter application code. */
+static void unhandled_v65_clear_all(void)
+{
+    struct unhandled_subscription_v65 *entry, *next;
+    ULONG count = 0;
+
+    AcquireSRWLockExclusive(&unhandled_v65_lock);
+    entry = unhandled_v65_handlers;
+    unhandled_v65_handlers = NULL;
+    ReleaseSRWLockExclusive(&unhandled_v65_lock);
+
+    while (entry)
+    {
+        next = entry->next;
+        IUnknown_Release(entry->handler);
+        free(entry);
+        entry = next;
+        count++;
+    }
+    if (count) TRACE("COREAPP65_UNHANDLED_CLEAR count=%lu\\n", count);
 }
 
 static inline struct factory *impl_from_v50_private(ICoreApplicationPrivate_v50 *iface)
